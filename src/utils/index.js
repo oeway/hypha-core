@@ -72,16 +72,31 @@ export function assert(condition, message) {
 }
 
 export class WebsocketRPCConnection {
-    constructor(websocket, workspace, clientId, userInfo, timeout = 60) {
-        this._websocket = websocket;
+    constructor(clients, clientId, workspace, userInfo, timeout = 60) {
+        this._clients = clients;
+        this._clientId = clientId;
         this._handle_message = null;
         this._reconnection_token = null;
         this._timeout = timeout * 1000; // converting to ms
         this.workspace = workspace;
-        this.clientId = clientId;
         this.userInfo = userInfo;
+    }
+
+    register_socket(websocket){
         websocket.on('message', data => {
-            this._handle_message(data.buffer);
+            const decoder = new Decoder();
+            const unpacker = decoder.decodeMulti(data);
+            
+            const { value: message, done } = unpacker.next(); // Only unpack the main message
+            const targetId = message.to.includes('/') ? message.to.split('/')[1] : message.to;
+            const workspace = message.to.includes('/') ? message.to.split('/')[0] : this.workspace;
+            if(targetId === this._clientId){
+                this._handle_message(data.buffer);
+            }
+            else{
+                this.emit_message(data);
+            }
+            
         });
     }
 
@@ -96,7 +111,6 @@ export class WebsocketRPCConnection {
 
     async emit_message(data) {
         assert(this._handle_message, "No handler for message");
-        assert(this._websocket, "No websocket connection");
         // Assuming `data` is an ArrayBuffer or Uint8Array containing your msgpack-encoded data
         const decoder = new Decoder();
         const unpacker = decoder.decodeMulti(data);
@@ -108,19 +122,19 @@ export class WebsocketRPCConnection {
         if (!targetId.includes("/")) {
             targetId = `${this.workspace}/${targetId}`;
         }
-        else{
-            if(targetId.split("/")[0] !== this.workspace){
-                targetId = `${this.workspace}/${targetId.split('/')[1]}`;
-            }
+        if(!this._clients[targetId]){
+            console.error('No client found for targetId:', targetId);
+            return
         }
-        
-        const sourceId = `${this.workspace}/${this.clientId}`;
-
+        const websocket = this._clients[targetId].socket;  
+        if(!message.from.includes('/')){
+            message.from = `${this.workspace}/${message.from}`;
+        }
         // Update the message with new fields
         const updatedMessage = {
             ...message,
             to: targetId,
-            from: sourceId,
+            from: message.from,
             user: this.userInfo, // Assuming `this.userInfo` represents `_user_info` from Python
         };
         // Re-encode the updated message
@@ -134,11 +148,14 @@ export class WebsocketRPCConnection {
         // Combine the updated message and any remaining data into `finalData`
         finalData.set(encodedUpdatedMessage, 0);
         finalData.set(new Uint8Array(remainingData), encodedUpdatedMessage.length);
-        this._websocket.send(finalData.buffer);
+        if(!websocket || ! websocket.send){
+            console.error('No websocket found for targetId:', targetId);
+            return
+        }
+        websocket.send(finalData.buffer);
     }
 
     disconnect(reason) {
-        this._websocket = null;
         console.info(`Websocket connection disconnected (${reason})`);
     }
 }
