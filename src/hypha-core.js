@@ -33,11 +33,10 @@ class Workspace {
         assert(config.workspace, "workspace is required")
         const rpc = new hyphaWebsocketClient.RPC(this.connection, {
             client_id: "workspace-manager",
-            // manager_id: "workspace-manager",
             default_context: { connection_type: "websocket" },
             name: config.name,
             method_timeout: config.method_timeout,
-            // workspace: config.workspace,
+            workspace: config.workspace,
         });
         const get_connection_info = (context) => {
             const info = {
