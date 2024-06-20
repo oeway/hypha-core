@@ -1,6 +1,5 @@
-import { Server, WebSocket as MockWebSocket } from 'mock-socket';
+import { Server } from 'mock-socket';
 import { hyphaWebsocketClient } from 'imjoy-rpc';
-
 import { WebsocketRPCConnection, randId, assert } from './utils'
 
 class Workspace {
@@ -59,42 +58,63 @@ class Workspace {
         }
 
         function patchServiceConfig(workspace, serviceApi) {
-            // Placeholder for patching service configuration with workspace info
             serviceApi.config = serviceApi.config || {};
             serviceApi.config.workspace = workspace.id;
-            serviceApi.hello.__rpc_object__._rtarget = workspace.id + "/" + serviceApi.hello.__rpc_object__._rtarget
-            return serviceApi;
-        }
 
-        async function getServiceById(serviceId, clientId, workspace) {
-            const workspaces = Object.values(Workspace.workspaces);
-            if(!workspace || workspace === "*"){
-                for(const key in Workspace.clients){
-                    for(const svc of Workspace.clients[key].services){
-                        const [ci, si] = svc.id.split(":");
-                        if((clientId==="*" && si === serviceId) || (clientId !== "*" && ci === clientId && si === serviceId)){
-                            const rpc = ws.rpc;
-                            const serviceApi = await rpc.get_remote_service(svc.id);
-                            return patchServiceConfig(ws, serviceApi);
+            function patchRtarget(obj) {
+                if (Array.isArray(obj)) {
+                    obj.forEach(patchRtarget);
+                } else if (typeof obj === 'object' && obj !== null) {
+                    for (let key in obj) {
+                        if (typeof obj[key] === 'function' && obj[key].__rpc_object__) {
+                            obj[key].__rpc_object__._rtarget = workspace.id + "/" + obj[key].__rpc_object__._rtarget;
+                        }
+                        if (typeof obj[key] === 'object' && obj[key] !== null) {
+                            patchRtarget(obj[key]);
                         }
                     }
                 }
             }
-            else{
-                const ws = workspaces.find(w => w.id === workspace);
-                const serviceApi = await ws.rpc.get_remote_service(`${workspace}/${clientId}:${serviceId}`);
-                return patchServiceConfig(ws, serviceApi);
-                // for(const key in ws.clients){
-                //     for(const svc of ws.clients[key].services){
-                //         const [ci, si] = svc.id.split(":");
-                //         if((clientId==="*" && si === serviceId) || (clientId !== "*" && ci === clientId && si === serviceId)){
-                //             const rpc = ws.rpc;
-                //             const serviceApi = await rpc.get_remote_service(svc.id);
-                //             return patchServiceConfig(ws, serviceApi);
-                //         }
-                //     }
-                // }
+
+            patchRtarget(serviceApi);
+
+            return serviceApi;
+        }
+
+        async function getServiceById(serviceId, clientId = "*", workspace = "*") {
+            for (const client of Object.values(Workspace.clients)) {
+                const ws = client.workspaceObj;
+                for (const service of client.services) {
+                    const [ci, si] = service.id.split(":");
+
+                    // If both clientId and workspace are "*", return the first service
+                    if (clientId === "*" && workspace === "*") {
+                        const serviceApi = await ws.rpc.get_remote_service(`${client.id}:${serviceId}`);
+                        return patchServiceConfig(ws, serviceApi);
+                    }
+
+                    // If only clientId is "*", match any client with the given serviceId
+                    if (clientId === "*" && si === serviceId) {
+                        const serviceApi = await ws.rpc.get_remote_service(`${client.id}:${serviceId}`);
+                        return patchServiceConfig(ws, serviceApi);
+                    }
+
+                    // If only workspace is "*", match any workspace with the given clientId and serviceId
+                    if (workspace === "*" && ci === clientId && si === serviceId) {
+                        const serviceApi = await ws.rpc.get_remote_service(service.id);
+                        return patchServiceConfig(ws, serviceApi);
+                    }
+
+                    // If neither are "*", match the exact clientId and serviceId
+                    if (ci === clientId && si === serviceId) {
+                        const serviceApi = await ws.rpc.get_remote_service(service.id);
+                        return patchServiceConfig(ws, serviceApi);
+                    }
+                }
             }
+        
+
+            throw new Error(`Service with id ${serviceId} not found`);
         }
 
         async function get_service(query, context = null) {
@@ -176,6 +196,7 @@ class Workspace {
             "update_client_info": (info, context) => {
                 const cid = this.id + "/" + info.id;
                 info.id = cid;
+                info.workspaceObj = this;
                 Workspace.clients[cid] = Object.assign(Workspace.clients[cid] || {}, info);
             },
             "get_connection_info": get_connection_info,
@@ -203,9 +224,21 @@ function parseJwt (token) {
 }
 
 const AUTH0_NAMESPACE = "https://api.imjoy.io/"
-export default class HyphaCore {
-    constructor() {
-        this.server = new Server('ws://localhost:8080/ws', {mock: true});
+export default class HyphaServer {
+    static servers = {};
+    constructor(port) {
+        this.uri = "ws://localhost:" + port + "/ws";
+        this.server = null;
+    }
+
+    start(){
+        if(HyphaServer.servers[this.uri]){
+            throw new Error(`Server already running at ${this.uri}`);
+        }
+        else{
+            this.server = new Server(this.uri, {mock: false});
+            HyphaServer.servers[this.uri] = this.server;
+        }
         this.server.on('connection', async socket => {
             const url = socket.url;
             // parse the url queries (? or #) from url and store it as a config object
@@ -267,37 +300,19 @@ export default class HyphaCore {
                 parent: userInfo.parent_client,
                 workspace: config.workspace,
                 user_info: userInfo,
+                workspaceObj: ws,
             };
 
         });
     }
-    
-    async initialize(){
-        const userToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im5VVnFFeWx4WEp2bV9hSjE4YlBHbCJ9.eyJodHRwczovL2FwaS5pbWpveS5pby9yb2xlcyI6WyJhZG1pbiJdLCJodHRwczovL2FwaS5pbWpveS5pby9lbWFpbCI6Im9ld2F5MDA3QGdtYWlsLmNvbSIsImlzcyI6Imh0dHBzOi8vaW1qb3kuZXUuYXV0aDAuY29tLyIsInN1YiI6ImdpdGh1Ynw0Nzg2NjciLCJhdWQiOlsiaHR0cHM6Ly9pbWpveS5ldS5hdXRoMC5jb20vYXBpL3YyLyIsImh0dHBzOi8vaW1qb3kuZXUuYXV0aDAuY29tL3VzZXJpbmZvIl0sImlhdCI6MTcxODg3MzQzMywiZXhwIjoxNzE4OTU5ODMzLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIG9mZmxpbmVfYWNjZXNzIiwiYXpwIjoib2Zzdng2QTdMZE1oRzBoa2xyNUpDQUVhd0x2NFB5c2UifQ.U1X5DWIrQ8H0o9lBFzP9dydnGE9Ma-vCSi_H0hLviUU3ZH_327hKjI58a6XzY1OMD7Y3GxBtAKtaYolETTC3ZMD_iWqmYsGOYBU9nd9s69GqQw0GNeuzeknLZMnfUByK8LHCD96bpuPBBGlQ8T4nhdstqj-zaJ8dJcT6zvhBiMJbp7_G5HOHlXKi7M85terGSbqpV9KANsyknnj2b-QySCbS_4zXlmBtqqpX1ZE90cn8QYaIxwPkkWt6ijGFY1wwCInGR-HNbB6C_5RRljWUnbeVbj81ciZsGmmneIRy-3RuAKWIGi0I9ccCRQVfm-byLKSPVC78amzUZCkLdyPd4g";
-        const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:8080", "token": userToken, "workspace": "ws-1", "client_id": "client-1"})
-        
-        await server1.log("hi-server1")
-        const token = await server1.generateToken();
-        const server2 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:8080", "workspace": "ws-2", "client_id": "client-2"})
-        await server2.log("hi-server2")
-        
-        assert(await server1.echo("hello") === "hello", "echo failed")
 
-        const svc = await server1.registerService({
-            "id": "hello-world",
-            "name": "Hello World",
-            "description": "A simple hello world service",
-            "config": {
-                "visibility": "public",
-                "require_context": false,
-            },
-            "hello": (name) => {
-                return `Hello ${name}!`;
-            },
-        })
-        const svc2 = await server2.getService(svc.id)
-        const ret = await svc2.hello("John")
-        assert(ret === "Hello John!", "hello failed")
-        console.log("hello-world service successfully tested:", svc);
+    reset(){
+        this.close();
+        this.start();
+    }
+    
+    close(){
+        this.server.stop();
+        delete HyphaServer.servers[this.server.uri];
     }
 }
