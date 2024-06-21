@@ -1,7 +1,41 @@
-import { Server } from 'mock-socket';
+import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'imjoy-rpc';
 import { WebsocketRPCConnection, randId, assert } from './utils'
 
+const connections = {};
+
+window.addEventListener("message", event => {
+    const clientId = event.data.from;
+    if(!clientId || !connections[clientId]){
+        console.warn("Connection not found for client: ", clientId);
+        return;
+    }
+    const connection = connections[clientId];
+    const ws = connection.websocket;
+    if(event.data.type === "message"){
+        ws.send(event.data.data);
+    }
+    else if(event.data.type === "close"){
+        ws.close();
+    }
+    else if(event.data.type === "error"){
+        ws.error();
+    }
+    else if(event.data.type === "connect"){
+        const ws = new WebSocket(event.data.url);
+        ws.onmessage = (evt) => {
+            connection.postMessage({type: "message", data: evt.data, to: clientId});
+        }
+        ws.onopen = () => {
+            connection.postMessage({type: "connected", to: clientId});
+        }
+        ws.onclose = () => {
+            connection.postMessage({type: "closed", to: clientId});
+        }
+        connection.websocket = ws;
+    }
+
+});
 class Workspace {
     static workspaces = {};
     static tokens = {};
@@ -165,7 +199,7 @@ class Workspace {
             }
             return token;
         }
-
+        
         await rpc.register_service({
             "id": "default",
             "name": "Default workspace management service",
@@ -198,6 +232,7 @@ class Workspace {
                 info.id = cid;
                 info.workspaceObj = this;
                 Workspace.clients[cid] = Object.assign(Workspace.clients[cid] || {}, info);
+                console.log('======Client info updated=======>', info);
             },
             "get_connection_info": get_connection_info,
             "getConnectionInfo": get_connection_info,
@@ -207,6 +242,36 @@ class Workspace {
             "getService": get_service,
             "generate_token": generate_token,
             "generateToken": generate_token,
+            "createWindow": async (config, context) => {
+                const elem = document.createElement("iframe");
+                elem.src = config.src;
+                elem.style.width = "100%";
+                elem.style.height = "100%";
+                elem.style.border = "none";
+                const container = document.getElementById("window-container");
+                const workspace = context.to.split(":")[0].split("/")[0];
+                const clientId = "client-" + Date.now();
+                container.appendChild(elem);
+                console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
+                // wait until the iframe is loaded
+                await new Promise((resolve) => {
+                    elem.onload = resolve;
+                });
+                
+                connections[clientId] = {
+                    websocket: null,
+                    postMessage: (data) => {
+                        elem.contentWindow.postMessage(data);
+                    },
+                }
+                elem.contentWindow.postMessage({
+                    type: "initializeHyphaClient",
+                    server_url: "http://localhost:8080",
+                    client_id: clientId,
+                    workspace,
+                });
+                // return await rpc.get_remote_service(`${workspace}/${clientId}:default`);
+            }
         })
         this.rpc = rpc;
     }

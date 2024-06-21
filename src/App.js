@@ -17,6 +17,7 @@ const App = () => {
 
     await server1.log("hi-server1")
     const token = await server1.generateToken();
+    console.log("token:", token)
     const server2 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "workspace": "ws-2", "client_id": "client-2", WebSocketClass: WebSocket})
     await server2.log("hi-server2")
 
@@ -38,13 +39,19 @@ const App = () => {
     const ret = await svc2.hello("John")
     assert(ret === "Hello John!", "hello failed")
     console.log("hello-world service successfully tested:", svc);
+
+
+    const iframeWindow = await server1.createWindow({src: "/iframe-template.html"})
+    console.log("iframeWindow:", iframeWindow)
+
   };
 
   return (
     <div className="container">
       <Header />
       <Greeting name="🙏" />
-      <button onClick={ setupHyphaServer }>Setup Hypha Core</button>
+      <button onClick={ setupHyphaServer }>Start Hypha Server</button>
+      <div id="window-container"></div>
     </div>
   );
 };

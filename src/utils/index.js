@@ -89,7 +89,6 @@ export class WebsocketRPCConnection {
             
             const { value: message, done } = unpacker.next(); // Only unpack the main message
             const targetId = message.to.includes('/') ? message.to.split('/')[1] : message.to;
-            const workspace = message.to.includes('/') ? message.to.split('/')[0] : this.workspace;
             if(targetId === this._clientId){
                 this._handle_message(data.buffer);
             }
