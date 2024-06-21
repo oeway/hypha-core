@@ -1,10 +1,10 @@
 import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'imjoy-rpc';
-import { WebsocketRPCConnection, randId, assert, MessageEmitter } from './utils'
+import { WebsocketRPCConnection, randId, assert, MessageEmitter, parsePluginCode } from './utils'
 
 const connections = {};
 
-window.addEventListener("message", event => {
+function handleClientMessage(event){
     const clientId = event.data.from;
     if(!clientId || !connections[clientId]){
         console.warn("Connection not found for client: ", clientId);
@@ -18,8 +18,21 @@ window.addEventListener("message", event => {
     else if(event.data.type === "close"){
         ws.close();
     }
-    else if(event.data.type === "error"){
-        ws.error();
+    else if(event.data.type === "executeSuccess"){
+        if(connection.onExecuteSuccess){
+            connection.onExecuteSuccess();
+        }
+        else{
+            console.log(`Script executed successfully for client: ${clientId}`);
+        }
+    }
+    else if(event.data.type === "executeError"){
+        if(connection.onExecuteError){
+            connection.onExecuteError(event.data.error);
+        }
+        else{
+            console.error(`Script execution failed for client: ${clientId}, error message: ${event.data.error}`);
+        }
     }
     else if(event.data.type === "connect"){
         const ws = new WebSocket(event.data.url);
@@ -34,9 +47,46 @@ window.addEventListener("message", event => {
         }
         connection.websocket = ws;
     }
+}
+window.addEventListener("message", handleClientMessage);
 
-});
-class Workspace extends MessageEmitter{
+function waitForClient(workspace, clientId){
+    return new Promise((resolve, reject) => {
+        const handler = (info) => {
+            if(info.id === (workspace.id + "/" + clientId) && info.services){
+                // check if there is a service with id ends with ":default"
+                const defaultService = info.services.find(s => s.id.endsWith(":default"));
+                if(defaultService){
+                    clearTimeout(timeoutId); // clear the timeout
+                    workspace.rpc.get_remote_service(defaultService.id).then(async (svc)=>{
+                        try{
+                            resolve(svc);
+                        }
+                        catch(e){
+                            reject(e);
+                        } 
+                    });
+                }
+                else{
+                    console.error("No default service found in the iframe client: ", clientId);
+                    reject("No default service found in the iframe client: " + clientId);
+                }
+            }
+        }
+        let timeoutId = setTimeout(() => {
+            workspace.eventBus.off("client_info_updated", handler);
+            reject(new Error("Timeout after 20 seconds"));
+        }, 20000);
+        
+        connections[clientId].onExecuteError = (error) => {
+            clearTimeout(timeoutId); // clear the timeout
+            reject(new Error("Error while executing the script: " + error));
+        }
+        workspace.eventBus.on("client_info_updated", handler);
+    });
+}
+
+class Workspace {
     static workspaces = {};
     static tokens = {};
     static clients = {};
@@ -48,22 +98,19 @@ class Workspace extends MessageEmitter{
         return Workspace.workspaces[config.workspace];
     }
 
-    async emit(event, data) {
-        this._fire(event, data);
-    }
-
     async setup(config) {
         assert(config.workspace, "workspace is required")
+        this.eventBus = config.event_bus;
         this.id = config.workspace;
-        let clientId = config.client_id;
-        if (!clientId) {
-            clientId = randId();
-        }
+        // let clientId = config.client_id;
+        // if (!clientId) {
+        //     clientId = randId();
+        // }
         this.connection = new WebsocketRPCConnection(
             Workspace.clients,
             "workspace-manager",
             config.workspace,
-            config.userInfo,
+            config.user_info,
             config.method_timeout || 60
         );
         
@@ -78,7 +125,7 @@ class Workspace extends MessageEmitter{
         const get_connection_info = (context) => {
             const info = {
                 "workspace": config.workspace,
-                "client_id": clientId,
+                // "client_id": clientId,
                 "reconnection_token": "",
                 "reconnection_expires_in": 36000,
             }
@@ -216,6 +263,9 @@ class Workspace extends MessageEmitter{
             "echo": (msg, context) => {
                 return msg;
             },
+            "alert": (msg, context) => {
+                alert(msg);
+            },
             "log": (msg, context) => {
                 console.log(msg);
             },
@@ -236,8 +286,7 @@ class Workspace extends MessageEmitter{
                 info.id = cid;
                 info.workspaceObj = this;
                 Workspace.clients[cid] = Object.assign(Workspace.clients[cid] || {}, info);
-                console.log('======Client info updated=======>', info);
-                this.emit("client_info_updated", info);
+                this.eventBus.emit("client_info_updated", info);
             },
             "get_connection_info": get_connection_info,
             "getConnectionInfo": get_connection_info,
@@ -247,16 +296,75 @@ class Workspace extends MessageEmitter{
             "getService": get_service,
             "generate_token": generate_token,
             "generateToken": generate_token,
+            "loadPlugin": async (src, context) => {
+                let code;
+                if(src.startsWith("http")){
+                    // fetch the plugin code
+                    const resp = await fetch(src);
+                    code = await resp.text();
+                }
+                else if(src.includes("\n")){
+                    code = src;
+                }
+                else{
+                    throw new Error("Only local plugins are supported in the workspace manager.");
+                }
+                config = parsePluginCode(code, {});
+                switch(config.type){
+                    case "web-worker":
+                        // create an inline webworker from /hypha-webworker.js
+                        const worker = new Worker("/hypha-webworker.js");
+                        const clientId = "client-" + Date.now();
+                        const workspace = context.to.split(":")[0].split("/")[0];
+                        connections[clientId] = {
+                            websocket: null,
+                            postMessage: (data) => {
+                                worker.postMessage(data);
+                            }
+                        }
+                        worker.postMessage({
+                            type: "initializeHyphaClient",
+                            server_url: "http://localhost:8080",
+                            workspace,
+                            client_id: clientId,
+                            config,
+                        });
+                        worker.onmessage = handleClientMessage;
+                        return await waitForClient(this, clientId);
+                    case "window":
+                        return await this.createWindow(config, context);
+                }
+
+            },
             "createWindow": async (config, context) => {
-                const elem = document.createElement("iframe");
-                elem.src = config.src;
-                elem.style.width = "100%";
-                elem.style.height = "100%";
-                elem.style.border = "none";
-                const container = document.getElementById("window-container");
+                if(!config.src && !config.src.startsWith('http') && !config.src.includes("\n")){
+                    throw new Error("Invalid window source.");
+                }
+                if(config.src.startsWith('http') && config.src.split("?")[0].endsWith(".imjoy.html")){
+                    // fetch the plugin code
+                    const resp = await fetch(config.src);
+                    const code = await resp.text();
+                    const pluginConfig = parsePluginCode(code, {});
+                    if(pluginConfig.type !== "window"){
+                        throw new Error("Invalid window plugin type: " + pluginConfig.type);
+                    }
+                    config = Object.assign(config, pluginConfig);
+                    config.src = "/hypha-iframe.html";
+                }
+                let elem;
+                if(config.window_id){
+                    elem = document.getElementById(config.window_id);
+                    if(!elem){
+                        throw new Error("Window element not found: " + config.window_id);
+                    }
+                }
+                else{
+                    config.window_id = "window-" + Date.now();
+                    await this.eventBus.emit("add_window", config);
+                    elem = document.getElementById(config.window_id);
+                }
                 const workspace = context.to.split(":")[0].split("/")[0];
                 const clientId = "client-" + Date.now();
-                container.appendChild(elem);
                 console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
                 // wait until the iframe is loaded
                 await new Promise((resolve) => {
@@ -274,47 +382,21 @@ class Workspace extends MessageEmitter{
                     server_url: "http://localhost:8080",
                     client_id: clientId,
                     workspace,
+                    config,
                 });
-
-                return await new Promise((resolve, reject) => {
-                    const handler = (info) => {
-                        if(info.id === (workspace + "/" + clientId) && info.services){
-                            // check if there is a service with id ends with ":default"
-                            const defaultService = info.services.find(s => s.id.endsWith(":default"));
-                            if(defaultService){
-                                clearTimeout(timeoutId); // clear the timeout
-                                rpc.get_remote_service(defaultService.id).then(async (svc)=>{
-                                    try{
-                                        if(svc.setup){
-                                            await svc.setup();
-                                        }
-                                        if(svc.run){
-                                            await svc.run({
-                                                data: config.data,
-                                                config: config.config,
-                                            });
-                                        }
-                                        resolve(svc);
-                                    }
-                                    catch(e){
-                                        reject(e);
-                                    } 
-                                });
-                            }
-                            else{
-                                console.error("No default service found in the iframe client: ", clientId);
-                                reject("No default service found in the iframe client: " + clientId);
-                            }
-                        }
-                    }
-                    let timeoutId = setTimeout(() => {
-                        this.off("client_info_updated", handler);
-                        reject(new Error("Timeout after 20 seconds"));
-                    }, 20000);
-
-                    this.on("client_info_updated", handler);
-                });
-                // return await rpc.get_remote_service(`${workspace}/${clientId}:default`);
+                if(config.passive)
+                    return;
+                const svc = await waitForClient(this, clientId);
+                if(svc.setup){
+                    await svc.setup();
+                }
+                if(svc.run && config){
+                    await svc.run({
+                        data: config.data,
+                        config: config.config,
+                    });
+                }
+                return svc;
             }
         })
         this.rpc = rpc;
@@ -333,11 +415,21 @@ function parseJwt (token) {
 }
 
 const AUTH0_NAMESPACE = "https://api.imjoy.io/"
-export default class HyphaServer {
+export default class HyphaServer extends MessageEmitter {
     static servers = {};
     constructor(port) {
+        super();
         this.uri = "ws://localhost:" + port + "/ws";
         this.server = null;
+
+        // register the default event
+        this.on("add_window", (config)=> {
+            console.log("Adding window: ", config);
+        });
+    }
+
+    async emit(event, data) {
+        this._fire(event, data);
     }
 
     start(){
@@ -395,10 +487,13 @@ export default class HyphaServer {
             }
             
             const ws = await Workspace.get({
+                "event_bus": this,
                 "workspace": config.workspace,
                 "token": config.token,
                 "name": "workspace-manager",
-                "userInfo": userInfo,
+                "user_info": userInfo,
+                "client_id": "workspace-manager",
+                "method_timeout": 60,
             });
 
             ws.connection.register_socket(socket);

@@ -1,7 +1,7 @@
 import "./App.css";
 import { Greeting, Header } from "./components";
 import React from "react";
-import HyphaServer from "./hypha-core";
+import HyphaServer from "./hypha-server";
 import { hyphaWebsocketClient } from 'imjoy-rpc';
 import { assert } from './utils'
 import { WebSocket } from 'mock-socket';
@@ -11,9 +11,18 @@ const App = () => {
     const port = 8080;
     const server = new HyphaServer(port);
     server.start();
+    server.on("add_window", (config)=>{
+      const elem = document.createElement("iframe");
+      elem.src = config.src;
+      elem.style.width = "100%";
+      elem.style.height = "100%";
+      elem.style.border = "none";
+      elem.id = config.window_id;
+      const container = document.getElementById("window-container");
+      container.appendChild(elem);
+    })
 
-    const userToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im5VVnFFeWx4WEp2bV9hSjE4YlBHbCJ9.eyJodHRwczovL2FwaS5pbWpveS5pby9yb2xlcyI6WyJhZG1pbiJdLCJodHRwczovL2FwaS5pbWpveS5pby9lbWFpbCI6Im9ld2F5MDA3QGdtYWlsLmNvbSIsImlzcyI6Imh0dHBzOi8vaW1qb3kuZXUuYXV0aDAuY29tLyIsInN1YiI6ImdpdGh1Ynw0Nzg2NjciLCJhdWQiOlsiaHR0cHM6Ly9pbWpveS5ldS5hdXRoMC5jb20vYXBpL3YyLyIsImh0dHBzOi8vaW1qb3kuZXUuYXV0aDAuY29tL3VzZXJpbmZvIl0sImlhdCI6MTcxODg3MzQzMywiZXhwIjoxNzE4OTU5ODMzLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIG9mZmxpbmVfYWNjZXNzIiwiYXpwIjoib2Zzdng2QTdMZE1oRzBoa2xyNUpDQUVhd0x2NFB5c2UifQ.U1X5DWIrQ8H0o9lBFzP9dydnGE9Ma-vCSi_H0hLviUU3ZH_327hKjI58a6XzY1OMD7Y3GxBtAKtaYolETTC3ZMD_iWqmYsGOYBU9nd9s69GqQw0GNeuzeknLZMnfUByK8LHCD96bpuPBBGlQ8T4nhdstqj-zaJ8dJcT6zvhBiMJbp7_G5HOHlXKi7M85terGSbqpV9KANsyknnj2b-QySCbS_4zXlmBtqqpX1ZE90cn8QYaIxwPkkWt6ijGFY1wwCInGR-HNbB6C_5RRljWUnbeVbj81ciZsGmmneIRy-3RuAKWIGi0I9ccCRQVfm-byLKSPVC78amzUZCkLdyPd4g";
-    const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "token": userToken, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
+    const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
 
     await server1.log("hi-server1")
     const token = await server1.generateToken();
@@ -40,8 +49,12 @@ const App = () => {
     assert(ret === "Hello John!", "hello failed")
     console.log("hello-world service successfully tested:", svc);
 
+    const plugin = await server1.loadPlugin("https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html")
+    await plugin.run();
+    console.log("web-worker plugin:", plugin)
 
-    const iframeWindow = await server1.createWindow({src: "/iframe-template.html"})
+    const iframeWindow = await server1.createWindow({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
+    await iframeWindow.run();
     console.log("iframeWindow:", iframeWindow)
 
   };

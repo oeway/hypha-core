@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>IFrame Template</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/imjoy-rpc@0.5.48-post1/dist/hypha-rpc-websocket.min.js"></script>
+    <script>
+
+        // create a temporary event listener to initiate the connection
+        window.addEventListener("message", (event) => {
+            const { type, server_url, workspace, client_id, config } = event.data;
+            if (type === "initializeHyphaClient") {
+                if (!server_url || !workspace || !client_id) {
+                    console.error("server_url, workspace, and client_id are required.");
+                    document.body.innerHTML = "<p>Failed to initialize Hypha client, missing required parameters.</p>";
+                    return;
+                }
+                document.body.innerHTML = "<p>Connecting to the hypha server...</p>";
+                class WebSocketProxy {
+                    constructor(url) {
+                        this.url = url;
+                        this.onopen = () => { };
+                        this.onmessage = () => { };
+                        this.onclose = () => { };
+                        this.onerror = () => { };
+
+                        this.readyState = WebSocket.CONNECTING;
+                        window.addEventListener("message", (event) => {
+                            const { type, data, to } = event.data;
+                            if (to !== client_id) {
+                                console.debug("message not for me", to, client_id);
+                                return;
+                            }
+                            switch (type) {
+                                case "message":
+                                    if (this.readyState === WebSocket.OPEN && this.onmessage) {
+                                        this.onmessage({ data: data });
+                                    }
+                                    break;
+                                case "connected":
+                                    this.readyState = WebSocket.OPEN;
+                                    this.onopen();
+                                    break
+                                case "closed":
+                                    this.readyState = WebSocket.CLOSED;
+                                    this.onclose();
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }, false);
+                        window.parent.postMessage({ type: "connect", url: this.url, from: client_id }, "*");
+                    }
+
+                    send(data) {
+                        if (this.readyState === WebSocket.OPEN) {
+                            window.parent.postMessage({ type: "message", data: data, from: client_id }, "*");
+                        }
+                    }
+
+                    close() {
+                        this.readyState = WebSocket.CLOSING;
+                        window.parent.postMessage({ type: "close", from: client_id }, "*");
+                        this.onclose();
+                    }
+
+                    addEventListener(type, listener) {
+                        if (type === "message") {
+                            this.onmessage = listener;
+                        }
+                        if (type === "open") {
+                            this.onopen = listener;
+                        }
+                        if (type === "close") {
+                            this.onclose = listener;
+                        }
+                        if (type === "error") {
+                            this.onerror = listener;
+                        }
+                    }
+                }
+                hyphaWebsocketClient.connectToServer({ server_url, workspace, client_id, WebSocketClass: WebSocketProxy }).then((server) => {
+                    globalThis.api = server;
+                    document.body.innerHTML = "<p>Connected to the hypha server.</p>";
+                    if (config.styles && config.styles.length > 0) {
+                        for (const style of config.styles) {
+                            // style.content contains css style
+                            // style.lang contains the language of the style
+                            const styleElement = document.createElement("style");
+                            styleElement.innerHTML = style.content;
+                            styleElement.lang = style.lang;
+                            document.head.appendChild(styleElement);
+                        }
+                    }
+                    if (config.links && config.links.length > 0) {
+                        for (const link of config.links) {
+                            const linkElement = document.createElement("a");
+                            linkElement.href = link.url;
+                            linkElement.innerText = link.text;
+                            document.body.appendChild(linkElement);
+                        }
+                    }
+                    if (config.windows && config.windows.length > 0) {
+                        for (const w of config.windows) {
+                            window.document.body.innerHTML = w.content;
+                            break;
+                        }
+                    }
+                    if (config.scripts && config.scripts.length > 0) {
+                        for (const script of config.scripts) {
+                            const scriptElement = document.createElement("script");
+                            // script.content contains the script
+                            scriptElement.innerHTML = script.content;
+                            scriptElement.lang = script.lang;
+                            document.head.appendChild(scriptElement);
+                        }
+                    }
+                    
+                });
+            }
+        }, false);
+        window.test = async () => {
+            const msg = await api.echo("hello from iframe")
+            alert(msg)
+        }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Initializing...</h1>
+</body>
+
+</html>
