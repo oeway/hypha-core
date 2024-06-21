@@ -95,17 +95,11 @@
         }, false);
         window.test = async () => {
             const msg = await api.echo("hello from iframe")
-            const svc = await api.registerService({
-                "id": "default",
-                "name": "Default Service",
-                "description": "A simple hello world service",
-                "config": {
-                    "visibility": "public",
-                    "require_context": false,
-                },
-                "hello": (name) => {
-                    return `Hello ${name}!`;
-                },
+           
+            await api.export({
+                setup(){
+                    console.log("initialized")
+                }
             })
             alert(msg)
         }

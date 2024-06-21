@@ -1,6 +1,6 @@
 import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'imjoy-rpc';
-import { WebsocketRPCConnection, randId, assert } from './utils'
+import { WebsocketRPCConnection, randId, assert, MessageEmitter } from './utils'
 
 const connections = {};
 
@@ -36,7 +36,7 @@ window.addEventListener("message", event => {
     }
 
 });
-class Workspace {
+class Workspace extends MessageEmitter{
     static workspaces = {};
     static tokens = {};
     static clients = {};
@@ -46,6 +46,10 @@ class Workspace {
             await Workspace.workspaces[config.workspace].setup(config);
         }
         return Workspace.workspaces[config.workspace];
+    }
+
+    async emit(event, data) {
+        this._fire(event, data);
     }
 
     async setup(config) {
@@ -233,6 +237,7 @@ class Workspace {
                 info.workspaceObj = this;
                 Workspace.clients[cid] = Object.assign(Workspace.clients[cid] || {}, info);
                 console.log('======Client info updated=======>', info);
+                this.emit("client_info_updated", info);
             },
             "get_connection_info": get_connection_info,
             "getConnectionInfo": get_connection_info,
@@ -269,6 +274,45 @@ class Workspace {
                     server_url: "http://localhost:8080",
                     client_id: clientId,
                     workspace,
+                });
+
+                return await new Promise((resolve, reject) => {
+                    const handler = (info) => {
+                        if(info.id === (workspace + "/" + clientId) && info.services){
+                            // check if there is a service with id ends with ":default"
+                            const defaultService = info.services.find(s => s.id.endsWith(":default"));
+                            if(defaultService){
+                                clearTimeout(timeoutId); // clear the timeout
+                                rpc.get_remote_service(defaultService.id).then(async (svc)=>{
+                                    try{
+                                        if(svc.setup){
+                                            await svc.setup();
+                                        }
+                                        if(svc.run){
+                                            await svc.run({
+                                                data: config.data,
+                                                config: config.config,
+                                            });
+                                        }
+                                        resolve(svc);
+                                    }
+                                    catch(e){
+                                        reject(e);
+                                    } 
+                                });
+                            }
+                            else{
+                                console.error("No default service found in the iframe client: ", clientId);
+                                reject("No default service found in the iframe client: " + clientId);
+                            }
+                        }
+                    }
+                    let timeoutId = setTimeout(() => {
+                        this.off("client_info_updated", handler);
+                        reject(new Error("Timeout after 20 seconds"));
+                    }, 20000);
+
+                    this.on("client_info_updated", handler);
                 });
                 // return await rpc.get_remote_service(`${workspace}/${clientId}:default`);
             }
