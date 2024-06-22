@@ -14,7 +14,7 @@
 
 body {
   background-color: var(--body-bg-color);
-  overflow: hidden;
+  overflow: auto;
   color: #f9fafb;
   font-family: "Inter", sans-serif;
   font-size: 1.5rem;

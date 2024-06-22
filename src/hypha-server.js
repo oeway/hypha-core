@@ -65,6 +65,7 @@ class Workspace {
         this.eventBus = config.event_bus;
         this.id = config.workspace;
         this.connections = config.connections;
+        this.serverUrl = config.server_url;
         this.messageHandler = config.message_handler;
         this.connection = new WebsocketRPCConnection(
             Workspace.clients,
@@ -99,7 +100,6 @@ class Workspace {
             assert(!service["id"].includes("/"), "Service id must not contain '/'")
             service["id"] = config.workspace + "/" + service["id"]
             return service
-
         }
 
         function patchServiceConfig(workspace, serviceApi) {
@@ -193,6 +193,120 @@ class Workspace {
             return token;
         }
         
+        const create_window = async (config, context) => {
+            if(config.src && config.src.startsWith('http') && config.src.split("?")[0].endsWith(".imjoy.html")){
+                // fetch the plugin code
+                const resp = await fetch(config.src);
+                const code = await resp.text();
+                const pluginConfig = parsePluginCode(code, {});
+                if(pluginConfig.type !== "window"){
+                    throw new Error("Invalid window plugin type: " + pluginConfig.type);
+                }
+                config = Object.assign(config, pluginConfig);
+                config.src = "/hypha-iframe.html";
+            }
+            else if(config.id && config.type === "window" && config.script){
+                config.src = "/hypha-iframe.html";
+                console.log("Creating window with config: ", config)
+            }
+            const workspace = context.to.split(":")[0].split("/")[0];
+            const clientId = "client-" + Date.now();
+            this.connections[this.id + "/" + clientId] = {
+                workspace: workspace,
+                websocket: null,
+                postMessage: (data) => {
+                    elem.contentWindow.postMessage(data);
+                },
+            }
+            const waitClientPromise = this.waitForClient(this.id + "/" + clientId);
+            let elem;
+            if(config.window_id){
+                elem = document.getElementById(config.window_id);
+                if(!elem){
+                    throw new Error("Window element not found: " + config.window_id);
+                }
+            }
+            else{
+                config.window_id = "window-" + Date.now();
+                await this.eventBus.emit("add_window", config);
+                elem = document.getElementById(config.window_id);
+            }
+            
+            this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
+            
+            console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
+            
+            // wait until the iframe is loaded
+            await new Promise((resolve) => {
+                elem.onload = resolve;
+            });
+            
+            
+            elem.contentWindow.postMessage({
+                type: "initializeHyphaClient",
+                server_url: this.serverUrl,
+                client_id: clientId,
+                workspace,
+                config,
+            });
+            if(config.passive)
+                return;
+            const svc = await waitClientPromise;
+            if(svc.setup){
+                await svc.setup();
+            }
+            if(svc.run && config){
+                await svc.run({
+                    data: config.data,
+                    config: config.config,
+                });
+            }
+            return svc;
+        }
+        
+        const load_plugin = async (config, context) => {
+            let code;
+            const src = config.src;
+            if(src.startsWith("http")){
+                // fetch the plugin code
+                const resp = await fetch(src);
+                code = await resp.text();
+            }
+            else if(src.includes("\n")){
+                code = src;
+            }
+            else{
+                throw new Error("Only local plugins are supported in the workspace manager.");
+            }
+            config = parsePluginCode(code, {});
+            switch(config.type){
+                case "web-worker":
+                    // create an inline webworker from /hypha-webworker.js
+                    const worker = new Worker("/hypha-webworker.js");
+                    const clientId = "client-" + Date.now();
+                    const workspace = context.to.split(":")[0].split("/")[0];
+                    this.connections[this.id + "/" + clientId] = {
+                        workspace: workspace,
+                        websocket: null,
+                        postMessage: (data) => {
+                            worker.postMessage(data);
+                        }
+                    }
+                    worker.postMessage({
+                        type: "initializeHyphaClient",
+                        server_url: this.serverUrl,
+                        workspace,
+                        client_id: clientId,
+                        config,
+                    });
+                    worker.onmessage = this.messageHandler;
+                    return await this.waitForClient(this.id + "/" + clientId);
+                case "window":
+                    return await create_window(config, context);
+            }
+
+        }
+
         await rpc.register_service({
             "id": "default",
             "name": "Default workspace management service",
@@ -238,116 +352,8 @@ class Workspace {
             "getService": get_service,
             "generate_token": generate_token,
             "generateToken": generate_token,
-            "loadPlugin": async (src, context) => {
-                let code;
-                if(src.startsWith("http")){
-                    // fetch the plugin code
-                    const resp = await fetch(src);
-                    code = await resp.text();
-                }
-                else if(src.includes("\n")){
-                    code = src;
-                }
-                else{
-                    throw new Error("Only local plugins are supported in the workspace manager.");
-                }
-                config = parsePluginCode(code, {});
-                switch(config.type){
-                    case "web-worker":
-                        // create an inline webworker from /hypha-webworker.js
-                        const worker = new Worker("/hypha-webworker.js");
-                        const clientId = "client-" + Date.now();
-                        const workspace = context.to.split(":")[0].split("/")[0];
-                        this.connections[this.id + "/" + clientId] = {
-                            workspace: workspace,
-                            websocket: null,
-                            postMessage: (data) => {
-                                worker.postMessage(data);
-                            }
-                        }
-                        worker.postMessage({
-                            type: "initializeHyphaClient",
-                            server_url: "http://local-hypha-server:8080",
-                            workspace,
-                            client_id: clientId,
-                            config,
-                        });
-                        worker.onmessage = this.messageHandler;
-                        return await this.waitForClient(this.id + "/" + clientId);
-                    case "window":
-                        return await this.createWindow(config, context);
-                }
-
-            },
-            "createWindow": async (config, context) => {
-                if(!config.src && !config.src.startsWith('http') && !config.src.includes("\n")){
-                    throw new Error("Invalid window source.");
-                }
-                if(config.src.startsWith('http') && config.src.split("?")[0].endsWith(".imjoy.html")){
-                    // fetch the plugin code
-                    const resp = await fetch(config.src);
-                    const code = await resp.text();
-                    const pluginConfig = parsePluginCode(code, {});
-                    if(pluginConfig.type !== "window"){
-                        throw new Error("Invalid window plugin type: " + pluginConfig.type);
-                    }
-                    config = Object.assign(config, pluginConfig);
-                    config.src = "/hypha-iframe.html";
-                }
-                const workspace = context.to.split(":")[0].split("/")[0];
-                const clientId = "client-" + Date.now();
-                this.connections[this.id + "/" + clientId] = {
-                    workspace: workspace,
-                    websocket: null,
-                    postMessage: (data) => {
-                        elem.contentWindow.postMessage(data);
-                    },
-                }
-                const waitClientPromise = this.waitForClient(this.id + "/" + clientId);
-                let elem;
-                if(config.window_id){
-                    elem = document.getElementById(config.window_id);
-                    if(!elem){
-                        throw new Error("Window element not found: " + config.window_id);
-                    }
-                }
-                else{
-                    config.window_id = "window-" + Date.now();
-                    await this.eventBus.emit("add_window", config);
-                    elem = document.getElementById(config.window_id);
-                }
-                
-                this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
-                
-                console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
-                
-                // wait until the iframe is loaded
-                await new Promise((resolve) => {
-                    elem.onload = resolve;
-                });
-                
-                
-                elem.contentWindow.postMessage({
-                    type: "initializeHyphaClient",
-                    server_url: "http://local-hypha-server:8080",
-                    client_id: clientId,
-                    workspace,
-                    config,
-                });
-                if(config.passive)
-                    return;
-                const svc = await waitClientPromise;
-                if(svc.setup){
-                    await svc.setup();
-                }
-                if(svc.run && config){
-                    await svc.run({
-                        data: config.data,
-                        config: config.config,
-                    });
-                }
-                return svc;
-            }
+            "loadPlugin": load_plugin,
+            "createWindow": create_window
         })
         this.rpc = rpc;
     }
@@ -409,6 +415,7 @@ export class WebsocketRPCConnection {
         const unpacker = decoder.decodeMulti(data);
         
         const { value: message, done } = unpacker.next(); // Only unpack the main message
+        console.log('============>', message)
         // Assuming `this.workspace` and `this.clientId` are available in your context
         // and represent `_workspace` and `_client_id` from the Python code respectively
         let targetId = message.to;
@@ -458,7 +465,9 @@ export default class HyphaServer extends MessageEmitter {
     static servers = {};
     constructor(port) {
         super();
-        this.uri = "ws://local-hypha-server:" + port + "/ws";
+        port = port || 8080;
+        this.url = "https://local-hypha-server:" + port;
+        this.wsUrl = "wss://local-hypha-server:" + port + "/ws";
         this.server = null;
         this.connections = {};
         this.imjoyPluginWindows = new Map();
@@ -634,12 +643,12 @@ export default class HyphaServer extends MessageEmitter {
     }
 
     start(){
-        if(HyphaServer.servers[this.uri]){
-            throw new Error(`Server already running at ${this.uri}`);
+        if(HyphaServer.servers[this.url]){
+            throw new Error(`Server already running at ${this.url}`);
         }
         else{
-            this.server = new Server(this.uri, {mock: false});
-            HyphaServer.servers[this.uri] = this.server;
+            this.server = new Server(this.wsUrl, {mock: false});
+            HyphaServer.servers[this.url] = this.server;
             this.messageHandler = this._handleClientMessage.bind(this);
             window.addEventListener("message", this.messageHandler);
         }
@@ -690,6 +699,7 @@ export default class HyphaServer extends MessageEmitter {
             }
             
             const ws = await Workspace.get({
+                "server_url": this.url,
                 "message_handler": this.messageHandler,
                 "connections": this.connections,
                 "event_bus": this,
@@ -726,6 +736,6 @@ export default class HyphaServer extends MessageEmitter {
         }
         window.removeEventListener("message", this.messageHandler);
         this.server.stop();
-        delete HyphaServer.servers[this.server.uri];
+        delete HyphaServer.servers[this.server.url];
     }
 }
