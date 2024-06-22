@@ -145,24 +145,6 @@ class Workspace {
         function patchServiceConfig(workspace, serviceApi) {
             serviceApi.config = serviceApi.config || {};
             serviceApi.config.workspace = workspace.id;
-
-            function patchRtarget(obj) {
-                if (Array.isArray(obj)) {
-                    obj.forEach(patchRtarget);
-                } else if (typeof obj === 'object' && obj !== null) {
-                    for (let key in obj) {
-                        if (typeof obj[key] === 'function' && obj[key].__rpc_object__) {
-                            obj[key].__rpc_object__._rtarget = workspace.id + "/" + obj[key].__rpc_object__._rtarget;
-                        }
-                        if (typeof obj[key] === 'object' && obj[key] !== null) {
-                            patchRtarget(obj[key]);
-                        }
-                    }
-                }
-            }
-
-            patchRtarget(serviceApi);
-
             return serviceApi;
         }
 
@@ -174,24 +156,28 @@ class Workspace {
 
                     // If both clientId and workspace are "*", return the first service
                     if (clientId === "*" && workspace === "*") {
+                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(`${client.id}:${serviceId}`);
                         return patchServiceConfig(ws, serviceApi);
                     }
 
                     // If only clientId is "*", match any client with the given serviceId
                     if (clientId === "*" && si === serviceId) {
+                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(`${client.id}:${serviceId}`);
                         return patchServiceConfig(ws, serviceApi);
                     }
 
                     // If only workspace is "*", match any workspace with the given clientId and serviceId
                     if (workspace === "*" && ci === clientId && si === serviceId) {
+                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(service.id);
                         return patchServiceConfig(ws, serviceApi);
                     }
 
                     // If neither are "*", match the exact clientId and serviceId
                     if (ci === clientId && si === serviceId) {
+                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(service.id);
                         return patchServiceConfig(ws, serviceApi);
                     }
