@@ -1,4 +1,4 @@
-importScripts("https://cdn.jsdelivr.net/npm/imjoy-rpc@0.5.49/dist/hypha-rpc-websocket.min.js")
+importScripts("https://cdn.jsdelivr.net/npm/imjoy-rpc@0.5.50/dist/hypha-rpc-websocket.min.js")
 
 // create a temporary event listener to initiate the connection
 self.addEventListener("message", (event) => {
