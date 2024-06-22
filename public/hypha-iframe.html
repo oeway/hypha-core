@@ -62,18 +62,18 @@
                                     break;
                             }
                         }, false);
-                        window.parent.postMessage({ type: "connect", url: this.url, from: client_id }, "*");
+                        window.parent.postMessage({ type: "connect", url: this.url, from: client_id, workspace}, "*");
                     }
 
                     send(data) {
                         if (this.readyState === WebSocket.OPEN) {
-                            window.parent.postMessage({ type: "message", data: data, from: client_id }, "*");
+                            window.parent.postMessage({ type: "message", data: data, from: client_id, workspace }, "*");
                         }
                     }
 
                     close() {
                         this.readyState = WebSocket.CLOSING;
-                        window.parent.postMessage({ type: "close", from: client_id }, "*");
+                        window.parent.postMessage({ type: "close", from: client_id, workspace }, "*");
                         this.onclose();
                     }
 

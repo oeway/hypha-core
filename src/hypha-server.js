@@ -2,89 +2,6 @@ import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'imjoy-rpc';
 import { WebsocketRPCConnection, randId, assert, MessageEmitter, parsePluginCode } from './utils'
 
-const connections = {};
-
-function handleClientMessage(event){
-    const clientId = event.data.from;
-    if(!clientId || !connections[clientId]){
-        console.warn("Connection not found for client: ", clientId);
-        return;
-    }
-    const connection = connections[clientId];
-    const ws = connection.websocket;
-    if(event.data.type === "message"){
-        ws.send(event.data.data);
-    }
-    else if(event.data.type === "close"){
-        ws.close();
-    }
-    else if(event.data.type === "executeSuccess"){
-        if(connection.onExecuteSuccess){
-            connection.onExecuteSuccess();
-        }
-        else{
-            console.log(`Script executed successfully for client: ${clientId}`);
-        }
-    }
-    else if(event.data.type === "executeError"){
-        if(connection.onExecuteError){
-            connection.onExecuteError(event.data.error);
-        }
-        else{
-            console.error(`Script execution failed for client: ${clientId}, error message: ${event.data.error}`);
-        }
-    }
-    else if(event.data.type === "connect"){
-        const ws = new WebSocket(event.data.url);
-        ws.onmessage = (evt) => {
-            connection.postMessage({type: "message", data: evt.data, to: clientId});
-        }
-        ws.onopen = () => {
-            connection.postMessage({type: "connected", to: clientId});
-        }
-        ws.onclose = () => {
-            connection.postMessage({type: "closed", to: clientId});
-        }
-        connection.websocket = ws;
-    }
-}
-window.addEventListener("message", handleClientMessage);
-
-function waitForClient(workspace, clientId){
-    return new Promise((resolve, reject) => {
-        const handler = (info) => {
-            if(info.id === (workspace.id + "/" + clientId) && info.services){
-                // check if there is a service with id ends with ":default"
-                const defaultService = info.services.find(s => s.id.endsWith(":default"));
-                if(defaultService){
-                    clearTimeout(timeoutId); // clear the timeout
-                    workspace.rpc.get_remote_service(defaultService.id).then(async (svc)=>{
-                        try{
-                            resolve(svc);
-                        }
-                        catch(e){
-                            reject(e);
-                        } 
-                    });
-                }
-                else{
-                    console.error("No default service found in the iframe client: ", clientId);
-                    reject("No default service found in the iframe client: " + clientId);
-                }
-            }
-        }
-        let timeoutId = setTimeout(() => {
-            workspace.eventBus.off("client_info_updated", handler);
-            reject(new Error("Timeout after 20 seconds"));
-        }, 20000);
-        
-        connections[clientId].onExecuteError = (error) => {
-            clearTimeout(timeoutId); // clear the timeout
-            reject(new Error("Error while executing the script: " + error));
-        }
-        workspace.eventBus.on("client_info_updated", handler);
-    });
-}
 
 class Workspace {
     static workspaces = {};
@@ -98,14 +15,49 @@ class Workspace {
         return Workspace.workspaces[config.workspace];
     }
 
+    waitForClient(clientId){
+        return new Promise((resolve, reject) => {
+            const handler = (info) => {
+                if(info.id === (this.id + "/" + clientId) && info.services){
+                    // check if there is a service with id ends with ":default"
+                    const defaultService = info.services.find(s => s.id.endsWith(":default"));
+                    if(defaultService){
+                        clearTimeout(timeoutId); // clear the timeout
+                        this.rpc.get_remote_service(defaultService.id).then(async (svc)=>{
+                            try{
+                                resolve(svc);
+                            }
+                            catch(e){
+                                reject(e);
+                            } 
+                        });
+                    }
+                    else{
+                        console.error("No default service found in the iframe client: ", clientId);
+                        reject("No default service found in the iframe client: " + clientId);
+                    }
+                }
+            }
+            let timeoutId = setTimeout(() => {
+                this.eventBus.off("client_info_updated", handler);
+                reject(new Error("Timeout after 20 seconds"));
+            }, 20000);
+            
+            this.connections[this.id + "/" + clientId].onExecuteError = (error) => {
+                clearTimeout(timeoutId); // clear the timeout
+                reject(new Error("Error while executing the script: " + error));
+            }
+            this.eventBus.on("client_info_updated", handler);
+        });
+    }
+
+
     async setup(config) {
         assert(config.workspace, "workspace is required")
         this.eventBus = config.event_bus;
         this.id = config.workspace;
-        // let clientId = config.client_id;
-        // if (!clientId) {
-        //     clientId = randId();
-        // }
+        this.connections = config.connections;
+        this.messageHandler = config.message_handler;
         this.connection = new WebsocketRPCConnection(
             Workspace.clients,
             "workspace-manager",
@@ -156,21 +108,18 @@ class Workspace {
 
                     // If both clientId and workspace are "*", return the first service
                     if (clientId === "*" && workspace === "*") {
-                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(`${client.id}:${serviceId}`);
                         return patchServiceConfig(ws, serviceApi);
                     }
 
                     // If only clientId is "*", match any client with the given serviceId
                     if (clientId === "*" && si === serviceId) {
-                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(`${client.id}:${serviceId}`);
                         return patchServiceConfig(ws, serviceApi);
                     }
 
                     // If only workspace is "*", match any workspace with the given clientId and serviceId
                     if (workspace === "*" && ci === clientId && si === serviceId) {
-                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(service.id);
                         return patchServiceConfig(ws, serviceApi);
                     }
@@ -302,7 +251,7 @@ class Workspace {
                         const worker = new Worker("/hypha-webworker.js");
                         const clientId = "client-" + Date.now();
                         const workspace = context.to.split(":")[0].split("/")[0];
-                        connections[clientId] = {
+                        this.connections[this.id + "/" + clientId] = {
                             websocket: null,
                             postMessage: (data) => {
                                 worker.postMessage(data);
@@ -315,8 +264,8 @@ class Workspace {
                             client_id: clientId,
                             config,
                         });
-                        worker.onmessage = handleClientMessage;
-                        return await waitForClient(this, clientId);
+                        worker.onmessage = this.messageHandler;
+                        return await this.waitForClient(clientId);
                     case "window":
                         return await this.createWindow(config, context);
                 }
@@ -357,7 +306,7 @@ class Workspace {
                     elem.onload = resolve;
                 });
                 
-                connections[clientId] = {
+                this.connections[this.id + "/" + clientId] = {
                     websocket: null,
                     postMessage: (data) => {
                         elem.contentWindow.postMessage(data);
@@ -372,7 +321,7 @@ class Workspace {
                 });
                 if(config.passive)
                     return;
-                const svc = await waitForClient(this, clientId);
+                const svc = await this.waitForClient(clientId);
                 if(svc.setup){
                     await svc.setup();
                 }
@@ -407,6 +356,7 @@ export default class HyphaServer extends MessageEmitter {
         super();
         this.uri = "ws://localhost:" + port + "/ws";
         this.server = null;
+        this.connections = {};
 
         // register the default event
         this.on("add_window", (config)=> {
@@ -418,6 +368,56 @@ export default class HyphaServer extends MessageEmitter {
         this._fire(event, data);
     }
 
+    _handleClientMessage(event){
+        const clientId = event.data.from;
+        const workspace = event.data.workspace;
+        if(!workspace){
+            console.warn("Workspace not found in the message: ", event.data);
+            return;
+        }
+        if(!clientId  || !this.connections[workspace + "/" + clientId]){
+            console.warn("Connection not found for client: ", clientId);
+            return;
+        }
+        const connection = this.connections[workspace + "/" + clientId];
+        const ws = connection.websocket;
+        if(event.data.type === "message"){
+            ws.send(event.data.data);
+        }
+        else if(event.data.type === "close"){
+            ws.close();
+        }
+        else if(event.data.type === "executeSuccess"){
+            if(connection.onExecuteSuccess){
+                connection.onExecuteSuccess();
+            }
+            else{
+                console.log(`Script executed successfully for client: ${clientId}`);
+            }
+        }
+        else if(event.data.type === "executeError"){
+            if(connection.onExecuteError){
+                connection.onExecuteError(event.data.error);
+            }
+            else{
+                console.error(`Script execution failed for client: ${clientId}, error message: ${event.data.error}`);
+            }
+        }
+        else if(event.data.type === "connect"){
+            const ws = new WebSocket(event.data.url);
+            ws.onmessage = (evt) => {
+                connection.postMessage({type: "message", data: evt.data, to: clientId});
+            }
+            ws.onopen = () => {
+                connection.postMessage({type: "connected", to: clientId});
+            }
+            ws.onclose = () => {
+                connection.postMessage({type: "closed", to: clientId});
+            }
+            connection.websocket = ws;
+        }
+    }
+
     start(){
         if(HyphaServer.servers[this.uri]){
             throw new Error(`Server already running at ${this.uri}`);
@@ -425,6 +425,8 @@ export default class HyphaServer extends MessageEmitter {
         else{
             this.server = new Server(this.uri, {mock: false});
             HyphaServer.servers[this.uri] = this.server;
+            this.messageHandler = this._handleClientMessage.bind(this);
+            window.addEventListener("message", this.messageHandler);
         }
         this.server.on('connection', async socket => {
             const url = socket.url;
@@ -473,6 +475,8 @@ export default class HyphaServer extends MessageEmitter {
             }
             
             const ws = await Workspace.get({
+                "message_handler": this.messageHandler,
+                "connections": this.connections,
                 "event_bus": this,
                 "workspace": config.workspace,
                 "token": config.token,
@@ -502,6 +506,11 @@ export default class HyphaServer extends MessageEmitter {
     }
     
     close(){
+        for (const ws of Object.values(Workspace.workspaces)) {
+            ws.eventBus.off("client_info_updated");
+            
+        }
+        window.removeEventListener("message", this.messageHandler);
         this.server.stop();
         delete HyphaServer.servers[this.server.uri];
     }

@@ -41,18 +41,18 @@ self.addEventListener("message", (event) => {
                             break;
                     }
                 }, false);
-                self.postMessage({type: "connect", url: this.url, from: client_id});
+                self.postMessage({type: "connect", url: this.url, from: client_id, workspace});
             }
 
             send(data){
                 if(this.readyState === WebSocket.OPEN){
-                    self.postMessage({type: "message", data: data, from: client_id});
+                    self.postMessage({type: "message", data: data, from: client_id, workspace});
                 }
             }
 
             close(){
                 this.readyState = WebSocket.CLOSING;
-                self.postMessage({type: "close", from: client_id});
+                self.postMessage({type: "close", from: client_id, workspace});
                 this.onclose();
             }
 
@@ -77,9 +77,9 @@ self.addEventListener("message", (event) => {
             if(config.script){
                 try{
                     eval(config.script);
-                    self.postMessage({type: "executeSuccess", from: client_id});
+                    self.postMessage({type: "executeSuccess", from: client_id, workspace});
                 }catch(e){
-                    self.postMessage({type: "executeError", error: e.message, from: client_id});
+                    self.postMessage({type: "executeError", error: e.message, from: client_id, workspace});
                 }
             }
         });
