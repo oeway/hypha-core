@@ -24,8 +24,44 @@ const App = () => {
 
     const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
 
-    const kaibu = await server1.createWindow({src: "https://kaibu.org/#/app"})
-    console.log("kaibu initialized:", kaibu)
+    const chatbot = await server1.createWindow({src: "https://bioimage.io/chat"})
+        
+    const chatbotExtension = {
+      _rintf: true,
+      id: "my-extension",
+      type: "bioimageio-chatbot-extension",
+      name: "My Extension",
+      description: "This is my extension",
+      get_schema() {
+          return {
+              my_tool: {
+                  type: "object",
+                  title: "my_tool",
+                  description: "my tool description",
+                  properties: {
+                      my_param: {
+                          type: "number",
+                          description: "This is my parameter doc"
+                      }
+                  }
+              }
+          };
+      },
+      tools: {
+          my_tool(config) {
+              console.log(config.my_param);
+              return {result: "success"};
+          }
+      }
+    }
+    await chatbot.registerExtension(chatbotExtension)
+
+    const viewer = await server1.createWindow({src: "https://kaibu.org/#/app"})
+    await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
+    console.log("kaibu viewer initialized:", viewer)
+
+    const vizarr = await server1.createWindow({ src: 'https://hms-dbmi.github.io/vizarr' });
+    await vizarr.add_image({ source: 'https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.1/6001240.zarr' });
 
     await server1.log("hi-server1")
     const token = await server1.generateToken();

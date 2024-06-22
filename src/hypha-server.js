@@ -294,6 +294,16 @@ class Workspace {
                     config = Object.assign(config, pluginConfig);
                     config.src = "/hypha-iframe.html";
                 }
+                const workspace = context.to.split(":")[0].split("/")[0];
+                const clientId = "client-" + Date.now();
+                this.connections[this.id + "/" + clientId] = {
+                    workspace: workspace,
+                    websocket: null,
+                    postMessage: (data) => {
+                        elem.contentWindow.postMessage(data);
+                    },
+                }
+                const waitClientPromise = this.waitForClient(this.id + "/" + clientId);
                 let elem;
                 if(config.window_id){
                     elem = document.getElementById(config.window_id);
@@ -306,17 +316,11 @@ class Workspace {
                     await this.eventBus.emit("add_window", config);
                     elem = document.getElementById(config.window_id);
                 }
-                const workspace = context.to.split(":")[0].split("/")[0];
-                const clientId = "client-" + Date.now();
+                
+                this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
+                
                 console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
-                this.connections[this.id + "/" + clientId] = {
-                    workspace: workspace,
-                    websocket: null,
-                    postMessage: (data) => {
-                        elem.contentWindow.postMessage(data);
-                    },
-                    contentWindow: elem.contentWindow,
-                }
+                
                 // wait until the iframe is loaded
                 await new Promise((resolve) => {
                     elem.onload = resolve;
@@ -332,7 +336,7 @@ class Workspace {
                 });
                 if(config.passive)
                     return;
-                const svc = await this.waitForClient(this.id + "/" + clientId);
+                const svc = await waitClientPromise;
                 if(svc.setup){
                     await svc.setup();
                 }
@@ -396,9 +400,21 @@ export default class HyphaServer extends MessageEmitter {
             return;
         }
         const workspaceObj = Workspace.workspaces[this.connections[cid].workspace];
-        const coreInterface = workspaceObj.get_default_service()
+        const defaultService = workspaceObj.get_default_service()
         // TODO: For each core interface function, we need to bind to a fixed context
-        
+        // currently each coreInterface takes the last arguments as context
+        // We need to fix it to {from: `${cid}`, to: `${this.connections[cid].workspace}/${workspace-manager}`} for each call
+        const coreInterface = {};
+        for (const key in defaultService) {
+            if (typeof defaultService[key] === "function") {
+                coreInterface[key] = async (...args) => {
+                    return await defaultService[key](...args, {from: `${cid}`, to: `${this.connections[cid].workspace}/workspace-manager`});
+                }
+            }
+            else{
+                coreInterface[key] = defaultService[key];
+            }
+        }
         const coreConnection = {
             peer_id: data.peer_id,
             fire(m){
@@ -457,14 +473,11 @@ export default class HyphaServer extends MessageEmitter {
         core.on("interfaceSetAsRemote", () => {
             core.on("remoteReady", async () => {
                 const api = core.getRemote();
-                console.log('=======window plugin ready==========', cid, api)
-                
                 api.id = `${cid}:default`;
                 workspaceObj.eventBus.emit("client_info_updated", {
                     id: cid,
                     imjoyApi: api,
                 })
-
             });
             core.requestRemote();
         });
