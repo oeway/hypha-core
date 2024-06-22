@@ -23,42 +23,42 @@ const App = () => {
     })
 
     const server1 = await hyphaWebsocketClient.connectToServer({"server_url": hyphaServer.url, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
-    const chatbotExtension = {
-      _rintf: true,
-      id: "my-extension",
-      type: "bioimageio-chatbot-extension",
-      name: "My Extension",
-      description: "This is my extension",
-      config: {
-          visibility: "public",
-          require_context: false,
-      },
-      get_schema() {
-          return {
-              my_tool: {
-                  type: "object",
-                  title: "my_tool",
-                  description: "my tool description",
-                  properties: {
-                      my_param: {
-                          type: "number",
-                          description: "This is my parameter doc"
-                      }
-                  }
-              }
-          };
-      },
-      tools: {
-          my_tool(config) {
-              console.log(config.my_param);
-              return {result: "success"};
-          }
-      }
-    }
-    const chatbot = await server1.createWindow({src: `https://bioimage.io/chat`})
-    await chatbot.registerExtension(chatbotExtension)
+    // const chatbotExtension = {
+    //   _rintf: true,
+    //   id: "my-extension",
+    //   type: "bioimageio-chatbot-extension",
+    //   name: "My Extension",
+    //   description: "This is my extension",
+    //   config: {
+    //       visibility: "public",
+    //       require_context: false,
+    //   },
+    //   get_schema() {
+    //       return {
+    //           my_tool: {
+    //               type: "object",
+    //               title: "my_tool",
+    //               description: "my tool description",
+    //               properties: {
+    //                   my_param: {
+    //                       type: "number",
+    //                       description: "This is my parameter doc"
+    //                   }
+    //               }
+    //           }
+    //       };
+    //   },
+    //   tools: {
+    //       my_tool(config) {
+    //           console.log(config.my_param);
+    //           return {result: "success"};
+    //       }
+    //   }
+    // }
+    // const chatbot = await server1.createWindow({src: `https://bioimage.io/chat`})
+    // await chatbot.registerExtension(chatbotExtension)
 
-    console.log("chatbot initialized:", chatbot)
+    // console.log("chatbot initialized:", chatbot)
 
     const viewer = await server1.createWindow({src: "https://kaibu.org/#/app"})
     await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")

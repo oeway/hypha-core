@@ -18,7 +18,11 @@ class Workspace {
     waitForClient(cid){
         return new Promise((resolve, reject) => {
             const handler = (info) => {
-                if(info.id === cid && info.imjoyApi){
+                if(info.id === cid && info.error){
+                    clearTimeout(timeoutId); // clear the timeout
+                    reject(new Error(info.error));
+                }
+                else if(info.id === cid && info.imjoyApi){
                     clearTimeout(timeoutId); // clear the timeout
                     resolve(info.imjoyApi);
                     return;
@@ -47,11 +51,6 @@ class Workspace {
                 this.eventBus.off("client_info_updated", handler);
                 reject(new Error("Timeout after 20 seconds"));
             }, 20000);
-            
-            this.connections[cid].onExecuteError = (error) => {
-                clearTimeout(timeoutId); // clear the timeout
-                reject(new Error("Error while executing the script: " + error));
-            }
             this.eventBus.on("client_info_updated", handler);
         });
     }
@@ -316,6 +315,15 @@ class Workspace {
                 "workspace": config.workspace,
                 "visibility": "public",
             },
+            "emit": async (type, data, context) => {
+                await this.eventBus.emit(type, data);
+            },
+            "on": (event, handler, context) => {
+                this.eventBus.on(event, handler);
+            },
+            "off": (event, handler, context) => {
+                this.eventBus.off(event, handler);
+            },
             "echo": (msg, context) => {
                 return msg;
             },
@@ -415,7 +423,6 @@ export class WebsocketRPCConnection {
         const unpacker = decoder.decodeMulti(data);
         
         const { value: message, done } = unpacker.next(); // Only unpack the main message
-        console.log('============>', message)
         // Assuming `this.workspace` and `this.clientId` are available in your context
         // and represent `_workspace` and `_client_id` from the Python code respectively
         let targetId = message.to;
@@ -522,7 +529,6 @@ export default class HyphaServer extends MessageEmitter {
             },
             disconnect: function () { },
             emit: msg => {
-                console.log("emit:", msg);
                 msg.peer_id = coreConnection.peer_id;
                 contentWindow.postMessage(msg, "*")
             },
@@ -610,22 +616,6 @@ export default class HyphaServer extends MessageEmitter {
         }
         else if(event.data.type === "close"){
             ws.close();
-        }
-        else if(event.data.type === "executeSuccess"){
-            if(connection.onExecuteSuccess){
-                connection.onExecuteSuccess();
-            }
-            else{
-                console.log(`Script executed successfully for client: ${clientId}`);
-            }
-        }
-        else if(event.data.type === "executeError"){
-            if(connection.onExecuteError){
-                connection.onExecuteError(event.data.error);
-            }
-            else{
-                console.error(`Script execution failed for client: ${clientId}, error message: ${event.data.error}`);
-            }
         }
         else if(event.data.type === "connect"){
             const ws = new WebSocket(event.data.url);
