@@ -22,7 +22,7 @@ const App = () => {
       container.appendChild(elem);
     })
 
-    const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
+    const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://local-hypha-server:" + port, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
 
     const chatbot = await server1.createWindow({src: "https://bioimage.io/chat"})
         
@@ -66,7 +66,7 @@ const App = () => {
     await server1.log("hi-server1")
     const token = await server1.generateToken();
     console.log("token:", token)
-    const server2 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "workspace": "ws-2", "client_id": "client-2", WebSocketClass: WebSocket})
+    const server2 = await hyphaWebsocketClient.connectToServer({"server_url": "http://local-hypha-server:" + port, "workspace": "ws-2", "client_id": "client-2", WebSocketClass: WebSocket})
     await server2.log("hi-server2")
 
     assert(await server1.echo("hello") === "hello", "echo failed")

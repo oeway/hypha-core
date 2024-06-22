@@ -267,7 +267,7 @@ class Workspace {
                         }
                         worker.postMessage({
                             type: "initializeHyphaClient",
-                            server_url: "http://localhost:8080",
+                            server_url: "http://local-hypha-server:8080",
                             workspace,
                             client_id: clientId,
                             config,
@@ -329,7 +329,7 @@ class Workspace {
                 
                 elem.contentWindow.postMessage({
                     type: "initializeHyphaClient",
-                    server_url: "http://localhost:8080",
+                    server_url: "http://local-hypha-server:8080",
                     client_id: clientId,
                     workspace,
                     config,
@@ -369,7 +369,7 @@ export default class HyphaServer extends MessageEmitter {
     static servers = {};
     constructor(port) {
         super();
-        this.uri = "ws://localhost:" + port + "/ws";
+        this.uri = "ws://local-hypha-server:" + port + "/ws";
         this.server = null;
         this.connections = {};
         this.imjoyPluginWindows = new Map();
