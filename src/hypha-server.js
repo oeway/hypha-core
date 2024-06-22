@@ -1,5 +1,5 @@
 import { Server, WebSocket } from 'mock-socket';
-import { hyphaWebsocketClient } from 'imjoy-rpc';
+import { hyphaWebsocketClient, imjoyRPC } from 'imjoy-rpc';
 import { WebsocketRPCConnection, randId, assert, MessageEmitter, parsePluginCode } from './utils'
 
 
@@ -15,10 +15,15 @@ class Workspace {
         return Workspace.workspaces[config.workspace];
     }
 
-    waitForClient(clientId){
+    waitForClient(cid){
         return new Promise((resolve, reject) => {
             const handler = (info) => {
-                if(info.id === (this.id + "/" + clientId) && info.services){
+                if(info.id === cid && info.imjoyApi){
+                    clearTimeout(timeoutId); // clear the timeout
+                    resolve(info.imjoyApi);
+                    return;
+                }
+                else if(info.id === cid && info.services){
                     // check if there is a service with id ends with ":default"
                     const defaultService = info.services.find(s => s.id.endsWith(":default"));
                     if(defaultService){
@@ -43,7 +48,7 @@ class Workspace {
                 reject(new Error("Timeout after 20 seconds"));
             }, 20000);
             
-            this.connections[this.id + "/" + clientId].onExecuteError = (error) => {
+            this.connections[cid].onExecuteError = (error) => {
                 clearTimeout(timeoutId); // clear the timeout
                 reject(new Error("Error while executing the script: " + error));
             }
@@ -51,6 +56,9 @@ class Workspace {
         });
     }
 
+    get_default_service(){
+        return this.rpc.get_local_service("default", {to: `${this.id}/workspace-manager`});
+    }
 
     async setup(config) {
         assert(config.workspace, "workspace is required")
@@ -126,7 +134,6 @@ class Workspace {
 
                     // If neither are "*", match the exact clientId and serviceId
                     if (ci === clientId && si === serviceId) {
-                        debugger
                         const serviceApi = await ws.rpc.get_remote_service(service.id);
                         return patchServiceConfig(ws, serviceApi);
                     }
@@ -252,6 +259,7 @@ class Workspace {
                         const clientId = "client-" + Date.now();
                         const workspace = context.to.split(":")[0].split("/")[0];
                         this.connections[this.id + "/" + clientId] = {
+                            workspace: workspace,
                             websocket: null,
                             postMessage: (data) => {
                                 worker.postMessage(data);
@@ -265,7 +273,7 @@ class Workspace {
                             config,
                         });
                         worker.onmessage = this.messageHandler;
-                        return await this.waitForClient(clientId);
+                        return await this.waitForClient(this.id + "/" + clientId);
                     case "window":
                         return await this.createWindow(config, context);
                 }
@@ -301,17 +309,20 @@ class Workspace {
                 const workspace = context.to.split(":")[0].split("/")[0];
                 const clientId = "client-" + Date.now();
                 console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
+                this.connections[this.id + "/" + clientId] = {
+                    workspace: workspace,
+                    websocket: null,
+                    postMessage: (data) => {
+                        elem.contentWindow.postMessage(data);
+                    },
+                    contentWindow: elem.contentWindow,
+                }
                 // wait until the iframe is loaded
                 await new Promise((resolve) => {
                     elem.onload = resolve;
                 });
                 
-                this.connections[this.id + "/" + clientId] = {
-                    websocket: null,
-                    postMessage: (data) => {
-                        elem.contentWindow.postMessage(data);
-                    },
-                }
+                
                 elem.contentWindow.postMessage({
                     type: "initializeHyphaClient",
                     server_url: "http://localhost:8080",
@@ -321,7 +332,7 @@ class Workspace {
                 });
                 if(config.passive)
                     return;
-                const svc = await this.waitForClient(clientId);
+                const svc = await this.waitForClient(this.id + "/" + clientId);
                 if(svc.setup){
                     await svc.setup();
                 }
@@ -357,6 +368,7 @@ export default class HyphaServer extends MessageEmitter {
         this.uri = "ws://localhost:" + port + "/ws";
         this.server = null;
         this.connections = {};
+        this.imjoyPluginWindows = new Map();
 
         // register the default event
         this.on("add_window", (config)=> {
@@ -368,13 +380,114 @@ export default class HyphaServer extends MessageEmitter {
         this._fire(event, data);
     }
 
-    _handleClientMessage(event){
-        const clientId = event.data.from;
-        const workspace = event.data.workspace;
-        if(!workspace){
-            console.warn("Workspace not found in the message: ", event.data);
+    _handleImJoyPlugin(event){
+        const contentWindow = event.source;
+        const data = event.data;
+        // use event.source to find the client id using this.connections(an object)
+        let cid = null;
+        for (const [key, value] of Object.entries(this.connections)) {
+            if(value.contentWindow === contentWindow){
+                cid = key;
+                break;
+            }
+        }
+        if(!cid){
+            console.error("Client id not found for the plugin: ", data);
             return;
         }
+        const workspaceObj = Workspace.workspaces[this.connections[cid].workspace];
+        const coreInterface = workspaceObj.get_default_service()
+        // TODO: For each core interface function, we need to bind to a fixed context
+        
+        const coreConnection = {
+            peer_id: data.peer_id,
+            fire(m){
+                if (coreConnection._messageHandler[m.type]) {
+                    coreConnection._messageHandler[m.type](m);
+                }
+            },
+            disconnect: function () { },
+            emit: msg => {
+                console.log("emit:", msg);
+                msg.peer_id = coreConnection.peer_id;
+                contentWindow.postMessage(msg, "*")
+            },
+            on: function (event, handler) {
+                coreConnection._messageHandler[event] = handler;
+            },
+            _messageHandler: {},
+            async execute(code) {
+                coreConnection.emit({ type: "execute", code: code });
+            }
+        };
+        const pluginConfig = data.config;
+        if (data.error) {
+            console.error("Failed to initialize the plugin", data.error);
+            return;
+        }
+        if (!data.peer_id) {
+            throw "Please provide a peer_id for the connection.";
+        }
+        
+        this.imjoyPluginWindows.set(event.source, 
+            {
+                coreConnection,
+                cid,
+            }
+        );
+        console.log("plugin initialized:", pluginConfig);
+        const core = new imjoyRPC.RPC(coreConnection, { name: "core" });
+        core.on("disconnected", details => {
+            console.log("status: plugin is disconnected", details);
+        });
+
+        core.on("remoteReady", () => {
+            console.log("status: plugin is ready");
+        });
+
+        core.on("remoteIdle", () => {
+            console.log("status: plugin is now idle");
+        });
+
+        core.on("remoteBusy", () => {
+            console.log("status: plugin is busy");
+        });
+
+        core.setInterface(coreInterface);
+        core.on("interfaceSetAsRemote", () => {
+            core.on("remoteReady", async () => {
+                const api = core.getRemote();
+                console.log('=======window plugin ready==========', cid, api)
+                
+                api.id = `${cid}:default`;
+                workspaceObj.eventBus.emit("client_info_updated", {
+                    id: cid,
+                    imjoyApi: api,
+                })
+
+            });
+            core.requestRemote();
+        });
+        core.sendInterface();
+    }
+
+    _handleClientMessage(event){
+        const workspace = event.data.workspace;
+        if(!workspace){
+            // imjoy compatible
+            if(event.data.type === "initialized"){
+                this._handleImJoyPlugin(event);
+            }
+            else if(this.imjoyPluginWindows.has(event.source)){
+                const coreConnection = this.imjoyPluginWindows.get(event.source).coreConnection;
+                coreConnection.fire(event.data);
+            }
+            else{
+                console.debug("Ignoring message without workspace info: ", event.data);
+                return;
+            }
+        }
+        const clientId = event.data.from;
         if(!clientId  || !this.connections[workspace + "/" + clientId]){
             console.warn("Connection not found for client: ", clientId);
             return;
@@ -508,7 +621,6 @@ export default class HyphaServer extends MessageEmitter {
     close(){
         for (const ws of Object.values(Workspace.workspaces)) {
             ws.eventBus.off("client_info_updated");
-            
         }
         window.removeEventListener("message", this.messageHandler);
         this.server.stop();

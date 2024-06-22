@@ -24,6 +24,9 @@ const App = () => {
 
     const server1 = await hyphaWebsocketClient.connectToServer({"server_url": "http://localhost:" + port, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
 
+    const kaibu = await server1.createWindow({src: "https://kaibu.org/#/app"})
+    console.log("kaibu initialized:", kaibu)
+
     await server1.log("hi-server1")
     const token = await server1.generateToken();
     console.log("token:", token)
