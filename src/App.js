@@ -59,6 +59,8 @@ const App = () => {
     // await chatbot.registerExtension(chatbotExtension)
 
     // console.log("chatbot initialized:", chatbot)
+    const webPython = await server1.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webPythonTemplate.imjoy.html"})
+    await webPython.run({});
 
     const viewer = await server1.createWindow({src: "https://kaibu.org/#/app"})
     await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")

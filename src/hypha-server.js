@@ -302,6 +302,41 @@ class Workspace {
                     return await this.waitForClient(this.id + "/" + clientId);
                 case "window":
                     return await create_window(config, context);
+                case "web-python":
+                    // create an inline webworker from /hypha-webpython.js
+                    const worker2 = new Worker("/hypha-webpython.js");
+                    const clientId2 = "client-" + Date.now();
+                    const workspace2 = context.to.split(":")[0].split("/")[0];
+                    this.connections[this.id + "/" + clientId2] = {
+                        workspace: workspace2,
+                        websocket: null,
+                        postMessage: (data) => {
+                            worker2.postMessage(data);
+                        }
+                    }
+                    return new Promise((resolve, reject)=>{
+                        // TODO: handle timeout
+                        worker2.onmessage = (event) => {
+                            // check if it's ready
+                            if(event.data.type === "hyphaClientReady"){
+                                setTimeout(()=>{
+                                    worker2.postMessage({
+                                        type: "initializeHyphaClient",
+                                        server_url: this.serverUrl,
+                                        workspace: workspace2,
+                                        client_id: clientId2,
+                                        config,
+                                    });
+                                    worker2.onmessage = this.messageHandler;
+                                    this.waitForClient(this.id + "/" + clientId2).then(resolve).catch(reject);
+                                }, 10);
+                            }
+                        }
+                    })
+                    
+                default:
+                    throw new Error("Unsupported plugin type: " + config.type);
+
             }
 
         }
