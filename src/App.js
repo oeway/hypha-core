@@ -1,114 +1,125 @@
 import "./App.css";
-import { Greeting, Header } from "./components";
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { setupHyphaClients } from "./hypha";
 import HyphaServer from "./hypha-server";
-import { hyphaWebsocketClient } from 'imjoy-rpc';
-import { assert } from './utils'
-import { WebSocket } from 'mock-socket';
 
 const App = () => {
-  const setupHyphaServer = async () => {
+  const containerRef = useRef(null);
+  const [mainIframe, setMainIframe] = useState(null);
+  const [sideIframes, setSideIframes] = useState([]);
+  const [activeSideIframe, setActiveSideIframe] = useState(null);
+  const [mainWidth, setMainWidth] = useState(50); // Percentage of the main window width
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
     const port = 8080;
     const hyphaServer = new HyphaServer(port);
     hyphaServer.start();
-    hyphaServer.on("add_window", (config)=>{
-      const elem = document.createElement("iframe");
-      elem.src = config.src;
-      elem.style.width = "100%";
-      elem.style.height = "100%";
-      elem.style.border = "none";
-      elem.id = config.window_id;
-      const container = document.getElementById("window-container");
-      container.appendChild(elem);
-    })
 
-    const server1 = await hyphaWebsocketClient.connectToServer({"server_url": hyphaServer.url, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket})
-    // const chatbotExtension = {
-    //   _rintf: true,
-    //   id: "my-extension",
-    //   type: "bioimageio-chatbot-extension",
-    //   name: "My Extension",
-    //   description: "This is my extension",
-    //   config: {
-    //       visibility: "public",
-    //       require_context: false,
-    //   },
-    //   get_schema() {
-    //       return {
-    //           my_tool: {
-    //               type: "object",
-    //               title: "my_tool",
-    //               description: "my tool description",
-    //               properties: {
-    //                   my_param: {
-    //                       type: "number",
-    //                       description: "This is my parameter doc"
-    //                   }
-    //               }
-    //           }
-    //       };
-    //   },
-    //   tools: {
-    //       my_tool(config) {
-    //           console.log(config.my_param);
-    //           return {result: "success"};
-    //       }
-    //   }
-    // }
-    // const chatbot = await server1.createWindow({src: `https://bioimage.io/chat`})
-    // await chatbot.registerExtension(chatbotExtension)
+    hyphaServer.on("add_window", (config) => {
+      const iframe = {
+        src: config.src,
+        id: config.window_id,
+      };
 
-    // console.log("chatbot initialized:", chatbot)
-    const webPython = await server1.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webPythonTemplate.imjoy.html"})
-    await webPython.run({});
+      if (config.pos === "main") {
+        setMainIframe(iframe);
+      } else if (config.pos === "side") {
+        setSideIframes((prev) => [...prev, iframe]);
+        setActiveSideIframe(iframe.id);
+      }
+    });
 
-    const viewer = await server1.createWindow({src: "https://kaibu.org/#/app"})
-    await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
-    console.log("kaibu viewer initialized:", viewer)
+    setupHyphaClients(hyphaServer.url);
+  }, []);
 
-    const vizarr = await server1.createWindow({ src: 'https://hms-dbmi.github.io/vizarr' });
-    await vizarr.add_image({ source: 'https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.1/6001240.zarr' });
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+    document.onmousemove = handleMouseMove;
+    document.onmouseup = handleMouseUp;
+  };
 
-    await server1.log("hi-server1")
-    const token = await server1.generateToken();
-    console.log("token:", token)
-    const server2 = await hyphaWebsocketClient.connectToServer({"server_url": hyphaServer.url, "workspace": "ws-2", "client_id": "client-2", WebSocketClass: WebSocket})
-    await server2.log("hi-server2")
+  const handleMouseMove = (e) => {
+    e.preventDefault();
+    const container = containerRef.current;
+    const rect = container.getBoundingClientRect();
+    const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+    setMainWidth(newWidth);
+  };
 
-    assert(await server1.echo("hello") === "hello", "echo failed")
-
-    const svc = await server1.registerService({
-        "id": "hello-world",
-        "name": "Hello World",
-        "description": "A simple hello world service",
-        "config": {
-            "visibility": "public",
-            "require_context": false,
-        },
-        "hello": (name) => {
-            return `Hello ${name}!`;
-        },
-    })
-    const svc2 = await server2.getService(svc.id)
-    const ret = await svc2.hello("John")
-    assert(ret === "Hello John!", "hello failed")
-    console.log("hello-world service successfully tested:", svc);
-
-    const plugin = await server1.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
-    await plugin.run();
-    console.log("web-worker plugin:", plugin)
-
-    const iframeWindow = await server1.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
-    await iframeWindow.run();
-    console.log("iframeWindow:", iframeWindow)
-
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    document.onmousemove = null;
+    document.onmouseup = null;
   };
 
   return (
-    <div className="container">
-      <Header />
-      <button onClick={ setupHyphaServer }>Start Hypha Server</button>
-      <div id="window-container"></div>
+    <div className="container" style={{ width: "100vw", height: "100vh" }}>
+      <div id="window-container" ref={containerRef} style={{ display: "flex", height: "100%", width: "100%" }}>
+        {mainIframe && (
+          <iframe
+            src={mainIframe.src}
+            style={{ width: sideIframes.length > 0 ? `${mainWidth}%` : "100%", height: "100%", border: "none" }}
+            id={mainIframe.id}
+          />
+        )}
+        {sideIframes.length > 0 && (
+          <>
+            <div
+              style={{
+                width: "5px",
+                cursor: "col-resize",
+                backgroundColor: "#ddd",
+                zIndex: 1,
+              }}
+              onMouseDown={handleMouseDown}
+            />
+            <div style={{ width: `${100 - mainWidth}%`, height: "100%", position: "relative" }}>
+              {sideIframes.map((iframe) => (
+                <iframe
+                  key={iframe.id}
+                  src={iframe.src}
+                  style={{
+                    display: iframe.id === activeSideIframe ? "block" : "none",
+                    width: "100%",
+                    height: "100%",
+                    border: "none",
+                  }}
+                  id={iframe.id}
+                />
+              ))}
+              <div style={{ position: "absolute", top: 10, right: 10 }}>
+                <select
+                  onChange={(e) => setActiveSideIframe(e.target.value)}
+                  value={activeSideIframe}
+                >
+                  {sideIframes.map((iframe) => (
+                    <option key={iframe.id} value={iframe.id}>
+                      {iframe.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      {isDragging && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            cursor: "col-resize",
+            zIndex: 2,
+          }}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        />
+      )}
     </div>
   );
 };

@@ -210,6 +210,7 @@ class Workspace {
             }
             const workspace = context.to.split(":")[0].split("/")[0];
             const clientId = "client-" + Date.now();
+            let elem;
             this.connections[this.id + "/" + clientId] = {
                 workspace: workspace,
                 websocket: null,
@@ -218,7 +219,6 @@ class Workspace {
                 },
             }
             const waitClientPromise = this.waitForClient(this.id + "/" + clientId);
-            let elem;
             if(config.window_id){
                 elem = document.getElementById(config.window_id);
                 if(!elem){
@@ -228,7 +228,11 @@ class Workspace {
             else{
                 config.window_id = "window-" + Date.now();
                 await this.eventBus.emit("add_window", config);
+                await new Promise((resolve) => setTimeout(resolve, 100));
                 elem = document.getElementById(config.window_id);
+                if(!elem){
+                    throw new Error("Window element not found: " + config.window_id);
+                }
             }
             
             this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
@@ -590,7 +594,7 @@ export default class HyphaServer extends MessageEmitter {
                 cid,
             }
         );
-        console.log("plugin initialized:", pluginConfig);
+        console.log("plugin initialized:", pluginConfig, event.source);
         const core = new imjoyRPC.RPC(coreConnection, { name: "core" });
         core.on("disconnected", details => {
             console.log("status: plugin is disconnected", details);
@@ -634,13 +638,12 @@ export default class HyphaServer extends MessageEmitter {
                 const coreConnection = this.imjoyPluginWindows.get(event.source).coreConnection;
                 coreConnection.fire(event.data);
             }
-            if(event.data.type === "hyphaClientReady"){
-                return;
+            else if(event.data.type === "hyphaClientReady"){
             }
             else{
                 console.debug("Ignoring message without workspace info: ", event.data);
-                return;
             }
+            return;
         }
         const clientId = event.data.from;
         if(!clientId  || !this.connections[workspace + "/" + clientId]){
