@@ -634,6 +634,9 @@ export default class HyphaServer extends MessageEmitter {
                 const coreConnection = this.imjoyPluginWindows.get(event.source).coreConnection;
                 coreConnection.fire(event.data);
             }
+            if(event.data.type === "hyphaClientReady"){
+                return;
+            }
             else{
                 console.debug("Ignoring message without workspace info: ", event.data);
                 return;
