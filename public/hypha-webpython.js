@@ -19,7 +19,7 @@ async def execute(server, config):
         sys.modules['imjoy_rpc'] = imjoy_rpc
         exec(script["content"], {'imjoy': imjoy, 'imjoy_rpc': imjoy_rpc, 'api': server})
 
-server = await setup_local_client(enable_execution=True, execute=execute)
+server = await setup_local_client(enable_execution=False, on_ready=execute)
 `
 console.log("Loading Pyodide...");
 loadPyodide().then(async (pyodide) => {
@@ -27,7 +27,7 @@ loadPyodide().then(async (pyodide) => {
     console.log("Pyodide is ready to use.");
     await pyodide.loadPackage("micropip");
     const micropip = pyodide.pyimport("micropip");
-    await micropip.install('imjoy-rpc==0.5.54-post2');
+    await micropip.install('imjoy-rpc==0.5.55');
     const isWindow = typeof window !== "undefined";
     if (isWindow) {
         window.parent.postMessage({ type: "hyphaClientReady" }, "*");
