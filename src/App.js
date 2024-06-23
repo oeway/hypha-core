@@ -1,7 +1,7 @@
-import "./App.css";
 import React, { useState, useEffect, useRef } from "react";
 import { setupHyphaClients } from "./hypha";
 import HyphaServer from "./hypha-server";
+import "./tailwind.css";
 
 const App = () => {
   const containerRef = useRef(null);
@@ -16,7 +16,7 @@ const App = () => {
     const hyphaServer = new HyphaServer(port);
     hyphaServer.start();
 
-    hyphaServer.on("add_window", (config) => {
+    hyphaServer.on("add_window", async (config) => {
       const iframe = {
         src: config.src,
         id: config.window_id,
@@ -55,67 +55,72 @@ const App = () => {
   };
 
   return (
-    <div className="container" style={{ width: "100vw", height: "100vh" }}>
-      <div id="window-container" ref={containerRef} style={{ display: "flex", height: "100%", width: "100%" }}>
+    <div className="w-screen h-screen flex flex-col">
+      <nav className="bg-gray-800 text-white flex items-center justify-between p-4">
+        <div className="flex items-center">
+          <img
+            src="https://bioimage.io/static/img/bioimage-io-icon.svg"
+            alt="BioImage.IO Logo"
+            className="h-8 mr-2"
+          />
+          <span className="font-semibold text-xl tracking-tight">BioImage.IO Chatbot</span>
+        </div>
+        {sideIframes.length > 0 && (
+          <div className="relative">
+            <select
+              className="appearance-none bg-gray-700 text-white py-2 px-4 pr-8 rounded leading-tight focus:outline-none focus:bg-gray-600 focus:border-gray-500"
+              onChange={(e) => setActiveSideIframe(e.target.value)}
+              value={activeSideIframe}
+            >
+              {sideIframes.map((iframe) => (
+                <option key={iframe.id} value={iframe.id}>
+                  {iframe.id}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+              <svg
+                className="fill-current h-4 w-4"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+              >
+                <path d="M5.516 7.548l4.484 4.484 4.484-4.484-1.172-1.172-3.312 3.312-3.312-3.312z" />
+              </svg>
+            </div>
+          </div>
+        )}
+      </nav>
+      <div className="flex-grow flex" ref={containerRef}>
         {mainIframe && (
           <iframe
             src={mainIframe.src}
-            style={{ width: sideIframes.length > 0 ? `${mainWidth}%` : "100%", height: "100%", border: "none" }}
+            className="h-full border-none"
+            style={{ width: sideIframes.length > 0 ? `${mainWidth}%` : "100%" }}
             id={mainIframe.id}
           />
         )}
         {sideIframes.length > 0 && (
           <>
             <div
-              style={{
-                width: "5px",
-                cursor: "col-resize",
-                backgroundColor: "#ddd",
-                zIndex: 1,
-              }}
+              className="w-1 bg-gray-400 cursor-col-resize"
               onMouseDown={handleMouseDown}
             />
-            <div style={{ width: `${100 - mainWidth}%`, height: "100%", position: "relative" }}>
+            <div className="flex-grow relative h-full">
               {sideIframes.map((iframe) => (
                 <iframe
                   key={iframe.id}
                   src={iframe.src}
-                  style={{
-                    display: iframe.id === activeSideIframe ? "block" : "none",
-                    width: "100%",
-                    height: "100%",
-                    border: "none",
-                  }}
+                  className={`h-full w-full border-none ${iframe.id === activeSideIframe ? "block" : "hidden"}`}
                   id={iframe.id}
                 />
               ))}
-              <div style={{ position: "absolute", top: 10, right: 10 }}>
-                <select
-                  onChange={(e) => setActiveSideIframe(e.target.value)}
-                  value={activeSideIframe}
-                >
-                  {sideIframes.map((iframe) => (
-                    <option key={iframe.id} value={iframe.id}>
-                      {iframe.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </>
         )}
       </div>
       {isDragging && (
         <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            cursor: "col-resize",
-            zIndex: 2,
-          }}
+          className="fixed top-0 left-0 w-full h-full cursor-col-resize z-50"
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
         />

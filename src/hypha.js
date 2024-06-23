@@ -81,8 +81,8 @@ export async function setupHyphaClients(serverUrl) {
     }
     const chatbot = await server1.createWindow({ src: `https://bioimage.io/chat`, pos: "main"})
     await chatbot.registerExtension(chatbotExtension)
-    const viewer = await server1.createWindow({ src: "https://kaibu.org/#/app", pos: "side"})
-    await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
+    // const viewer = await server1.createWindow({ src: "https://kaibu.org/#/app", pos: "side"})
+    // await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
 
     // // console.log("chatbot initialized:", chatbot)
     // const webPython = await server1.loadPlugin({src: test_web_python_src})
