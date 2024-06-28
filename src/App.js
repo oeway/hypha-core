@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { setupHyphaClients } from "./hypha";
-import HyphaServer from "./hypha-server";
+import { setupHyphaClients } from "./hypha-clients";
+import { HyphaServer } from "./hypha-server";
 import "./tailwind.css";
 
 const App = () => {
@@ -12,8 +12,7 @@ const App = () => {
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
-    const port = 8080;
-    const hyphaServer = new HyphaServer(port);
+    const hyphaServer = new HyphaServer();
     hyphaServer.start();
 
     hyphaServer.on("add_window", async (config) => {

@@ -4,7 +4,30 @@ const { EsbuildPlugin } = require("esbuild-loader");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
 
-webpackConfig = {
+// Configuration for lib as ESM
+const libConfig = {
+  entry: {
+    lib: path.resolve(__dirname, "src", "hypha-server.js"),
+  },
+  output: {
+    filename: "lib.js",
+    path: path.resolve(__dirname, "build"),
+    clean: true,
+    library: {
+      type: "module",
+    },
+  },
+  experiments: {
+    outputModule: true,
+  },
+  resolve: {
+    extensions: [".js"],
+    plugins: [],
+  },
+  // Other configurations like plugins, loaders, etc.
+};
+
+appConfig = {
   entry: path.resolve(__dirname, "src", "index.js"),
 
   output: {
@@ -15,7 +38,7 @@ webpackConfig = {
 
   plugins: [
     new HtmlWebpackPlugin({
-      title: "Web Starter Kit",
+      title: "Hypha Core",
       template: path.resolve(__dirname, "public", "index.html"),
     }),
     new MiniCssExtractPlugin(),
@@ -87,4 +110,4 @@ webpackConfig = {
   },
 };
 
-module.exports = webpackConfig;
+module.exports = [appConfig, libConfig];

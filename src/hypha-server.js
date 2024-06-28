@@ -3,6 +3,8 @@ import { hyphaWebsocketClient, imjoyRPC } from 'imjoy-rpc';
 import { randId, assert, MessageEmitter, parsePluginCode } from './utils'
 import { encode as msgpack_packb, Decoder } from "@msgpack/msgpack";
 
+const connectToServer = hyphaWebsocketClient.connectToServer;
+export { connectToServer, imjoyRPC };
 class Workspace {
     static workspaces = {};
     static tokens = {};
@@ -65,6 +67,7 @@ class Workspace {
         this.id = config.workspace;
         this.connections = config.connections;
         this.serverUrl = config.server_url;
+        this.baseUrl = config.base_url;
         this.messageHandler = config.message_handler;
         this.connection = new WebsocketRPCConnection(
             Workspace.clients,
@@ -73,7 +76,7 @@ class Workspace {
             config.user_info,
             config.method_timeout || 60
         );
-        
+        const self = this;
         assert(config.workspace, "workspace is required")
         const rpc = new hyphaWebsocketClient.RPC(this.connection, {
             client_id: "workspace-manager",
@@ -202,10 +205,10 @@ class Workspace {
                     throw new Error("Invalid window plugin type: " + pluginConfig.type);
                 }
                 config = Object.assign(config, pluginConfig);
-                config.src = "/hypha-iframe.html";
+                config.src = self.baseUrl + "hypha-iframe.html";
             }
             else if(config.id && config.type === "window" && config.script){
-                config.src = "/hypha-iframe.html";
+                config.src = self.baseUrl + "hypha-iframe.html";
                 console.log("Creating window with config: ", config)
             }
             const workspace = context.to.split(":")[0].split("/")[0];
@@ -227,11 +230,16 @@ class Workspace {
             }
             else{
                 config.window_id = "window-" + Date.now();
+                config.workspace = workspace;
                 await this.eventBus.emit("add_window", config);
                 await new Promise((resolve) => setTimeout(resolve, 100));
                 elem = document.getElementById(config.window_id);
                 if(!elem){
                     throw new Error("Window element not found: " + config.window_id);
+                }
+                // make sure elem is an iframe element
+                if(elem.tagName !== "IFRAME"){
+                    throw new Error("Window element must be an iframe: " + config.window_id);
                 }
             }
             
@@ -285,7 +293,7 @@ class Workspace {
             switch(config.type){
                 case "web-worker":
                     // create an inline webworker from /hypha-webworker.js
-                    const worker = new Worker("/hypha-webworker.js");
+                    const worker = new Worker(self.baseUrl + "hypha-webworker.js");
                     const clientId = "client-" + Date.now();
                     const workspace = context.to.split(":")[0].split("/")[0];
                     this.connections[this.id + "/" + clientId] = {
@@ -308,7 +316,7 @@ class Workspace {
                     return await create_window(config, context);
                 case "web-python":
                     // create an inline webworker from /hypha-webpython.js
-                    const worker2 = new Worker("/hypha-webpython.js");
+                    const worker2 = new Worker(self.baseUrl + "hypha-webpython.js");
                     const clientId2 = "client-" + Date.now();
                     const workspace2 = context.to.split(":")[0].split("/")[0];
                     this.connections[this.id + "/" + clientId2] = {
@@ -418,7 +426,7 @@ function parseJwt (token) {
 }
 
 
-export class WebsocketRPCConnection {
+class WebsocketRPCConnection {
     constructor(clients, clientId, workspace, userInfo, timeout = 60) {
         this._clients = clients;
         this._clientId = clientId;
@@ -507,13 +515,20 @@ export class WebsocketRPCConnection {
 }
 
 const AUTH0_NAMESPACE = "https://api.imjoy.io/"
-export default class HyphaServer extends MessageEmitter {
+export class HyphaServer extends MessageEmitter {
     static servers = {};
-    constructor(port) {
+    
+    constructor(config) {
         super();
-        port = port || 8080;
-        this.url = "https://local-hypha-server:" + port;
-        this.wsUrl = "wss://local-hypha-server:" + port + "/ws";
+        config = config || {};
+        this.port = config.port || 8080;
+        this.baseUrl = config.base_url || "./";
+        if(config.url && config.port){
+            throw new Error("Please provide either url or port, not both.");
+        }
+        this.WebSocketClass = WebSocket;
+        this.url = config.url || "https://local-hypha-server:" + this.port;
+        this.wsUrl = this.url.replace("https", "wss").replace("http", "ws") + "/ws";
         this.server = null;
         this.connections = {};
         this.imjoyPluginWindows = new Map();
@@ -596,22 +611,6 @@ export default class HyphaServer extends MessageEmitter {
         );
         console.log("plugin initialized:", pluginConfig, event.source);
         const core = new imjoyRPC.RPC(coreConnection, { name: "core" });
-        core.on("disconnected", details => {
-            console.log("status: plugin is disconnected", details);
-        });
-
-        core.on("remoteReady", () => {
-            console.log("status: plugin is ready");
-        });
-
-        core.on("remoteIdle", () => {
-            console.log("status: plugin is now idle");
-        });
-
-        core.on("remoteBusy", () => {
-            console.log("status: plugin is busy");
-        });
-
         core.setInterface(coreInterface);
         core.on("interfaceSetAsRemote", () => {
             core.on("remoteReady", async () => {
@@ -730,6 +729,7 @@ export default class HyphaServer extends MessageEmitter {
             }
             
             const ws = await Workspace.get({
+                "base_url": this.baseUrl,
                 "server_url": this.url,
                 "message_handler": this.messageHandler,
                 "connections": this.connections,

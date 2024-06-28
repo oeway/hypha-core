@@ -1,7 +1,5 @@
 
 import { hyphaWebsocketClient } from 'imjoy-rpc';
-import { assert } from './utils'
-import { WebSocket } from 'mock-socket';
 
 const test_web_python_src = `
 <docs lang="markdown">
@@ -43,9 +41,11 @@ api.export(ImJoyPlugin())
 </script>
 `
 
-export async function setupHyphaClients(serverUrl) {
+export async function setupHyphaClients(server) {
 
-    const server1 = await hyphaWebsocketClient.connectToServer({ "server_url": serverUrl, "workspace": "ws-1", "client_id": "client-1", WebSocketClass: WebSocket })
+    const server1 = await hyphaWebsocketClient.connectToServer({ server, workspace: "ws-1", client_id: "client-1" })
+    
+    let kaibuViewer = null;
     const chatbotExtension = {
         _rintf: true,
         id: "image-viewer",
@@ -66,20 +66,25 @@ export async function setupHyphaClients(serverUrl) {
                         image_url: {
                             type: "string",
                             description: "The URL of the image to show",
-                        }
-                    }
+                        },
+                        name: {
+                            type: "string",
+                            description: "The name of the image",
+                        },
+                    },
+                    required: ["image_url", "name"],
                 }
             };
         },
         tools: {
             async show_image(config) {
-                const viewer = await server1.createWindow({ src: "https://kaibu.org/#/app", pos: "side"})
-                await viewer.view_image(config.image_url)
-                return { result: "success" };
+                kaibuViewer = kaibuViewer || await server1.createWindow({ src: "https://kaibu.org/#/app", pos: "side"})
+                const layer = await kaibuViewer.view_image(config.image_url, {name: config.name})
+                return `Image displayed in Kaibu Viewer, layer id ${layer.id}`
             }
         }
     }
-    const chatbot = await server1.createWindow({ src: `https://bioimage.io/chat`, pos: "main"})
+    const chatbot = await server1.createWindow({ src: `https://bioimage.io/chat?assistant=Bridget`, pos: "main"})
     await chatbot.registerExtension(chatbotExtension)
     // const viewer = await server1.createWindow({ src: "https://kaibu.org/#/app", pos: "side"})
     // await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
