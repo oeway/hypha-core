@@ -10,7 +10,7 @@ const libConfig = {
     lib: path.resolve(__dirname, "src", "hypha-server.js"),
   },
   output: {
-    filename: "lib.js",
+    filename: "hypha-core.js",
     path: path.resolve(__dirname, "build"),
     clean: true,
     library: {
@@ -24,7 +24,6 @@ const libConfig = {
     extensions: [".js"],
     plugins: [],
   },
-  // Other configurations like plugins, loaders, etc.
 };
 
 appConfig = {

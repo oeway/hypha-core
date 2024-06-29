@@ -17,7 +17,7 @@ class Workspace {
         return Workspace.workspaces[config.workspace];
     }
 
-    waitForClient(cid){
+    waitForClient(cid, timeout){
         return new Promise((resolve, reject) => {
             const handler = (info) => {
                 if(info.id === cid && info.error){
@@ -51,8 +51,8 @@ class Workspace {
             }
             let timeoutId = setTimeout(() => {
                 this.eventBus.off("client_info_updated", handler);
-                reject(new Error("Timeout after 20 seconds"));
-            }, 20000);
+                reject(new Error(`Timeout after ${timeout/1000} s`));
+            }, timeout);
             this.eventBus.on("client_info_updated", handler);
         });
     }
@@ -196,6 +196,7 @@ class Workspace {
         }
         
         const create_window = async (config, context) => {
+            // set src
             if(config.src && config.src.startsWith('http') && config.src.split("?")[0].endsWith(".imjoy.html")){
                 // fetch the plugin code
                 const resp = await fetch(config.src);
@@ -205,11 +206,10 @@ class Workspace {
                     throw new Error("Invalid window plugin type: " + pluginConfig.type);
                 }
                 config = Object.assign(config, pluginConfig);
-                config.src = self.baseUrl + "hypha-iframe.html";
+                config.src = self.baseUrl + "hypha-app-iframe.html";
             }
             else if(config.id && config.type === "window" && config.script){
-                config.src = self.baseUrl + "hypha-iframe.html";
-                console.log("Creating window with config: ", config)
+                config.src = self.baseUrl + "hypha-app-iframe.html";
             }
             const workspace = context.to.split(":")[0].split("/")[0];
             const clientId = "client-" + Date.now();
@@ -221,8 +221,17 @@ class Workspace {
                     elem.contentWindow.postMessage(data);
                 },
             }
-            const waitClientPromise = this.waitForClient(this.id + "/" + clientId);
-            if(config.window_id){
+            // create iframe
+            if(config.type === "iframe"){
+                elem = document.createElement("iframe");
+                elem.src = config.src;
+                elem.id = config.window_id || "window-" + Date.now();
+                elem.style.width = config.width || "100%";
+                elem.style.height = config.height || "100%";
+                elem.style.display = "none"; // hidden
+                document.body.appendChild(elem);
+            }
+            else if(config.window_id){
                 elem = document.getElementById(config.window_id);
                 if(!elem){
                     throw new Error("Window element not found: " + config.window_id);
@@ -232,27 +241,32 @@ class Workspace {
                 config.window_id = "window-" + Date.now();
                 config.workspace = workspace;
                 await this.eventBus.emit("add_window", config);
-                await new Promise((resolve) => setTimeout(resolve, 100));
-                elem = document.getElementById(config.window_id);
+                // use a while loop to check if elem = document.getElementById(config.window_id) exists
+                // and set a timeout of 18s
+                for (let i = 0; i < 9; i++) {
+                    elem = document.getElementById(config.window_id);
+                    if(elem){
+                        break;
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                }
                 if(!elem){
-                    throw new Error("Window element not found: " + config.window_id);
+                    // throw new Error("Window element not found: " + config.window_id);
+                    throw new Error(`iframe element not found ${config.window_id} in ${9*500/1000} s`)
                 }
                 // make sure elem is an iframe element
                 if(elem.tagName !== "IFRAME"){
-                    throw new Error("Window element must be an iframe: " + config.window_id);
+                    throw new Error("iframe element must be an iframe: " + config.window_id);
                 }
             }
-            
+            console.log("Created window for workspace: ", workspace, " with client id: ", clientId, elem);
+            if(config.passive)
+                return;
+            // wait for the client to be ready
             this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
-            
-            console.log("Creating window for workspace: ", workspace, " with client id: ", clientId);
-            
-            // wait until the iframe is loaded
-            await new Promise((resolve) => {
-                elem.onload = resolve;
-            });
-            
-            
+            const waitClientPromise = this.waitForClient(this.id + "/" + clientId, 180000);
+
+            // initialize the connection to the iframe
             elem.contentWindow.postMessage({
                 type: "initializeHyphaClient",
                 server_url: this.serverUrl,
@@ -260,8 +274,6 @@ class Workspace {
                 workspace,
                 config,
             });
-            if(config.passive)
-                return;
             const svc = await waitClientPromise;
             if(svc.setup){
                 await svc.setup();
@@ -292,8 +304,8 @@ class Workspace {
             config = parsePluginCode(code, {});
             switch(config.type){
                 case "web-worker":
-                    // create an inline webworker from /hypha-webworker.js
-                    const worker = new Worker(self.baseUrl + "hypha-webworker.js");
+                    // create an inline webworker from /hypha-app-webworker.js
+                    const worker = new Worker(self.baseUrl + "hypha-app-webworker.js");
                     const clientId = "client-" + Date.now();
                     const workspace = context.to.split(":")[0].split("/")[0];
                     this.connections[this.id + "/" + clientId] = {
@@ -311,12 +323,14 @@ class Workspace {
                         config,
                     });
                     worker.onmessage = this.messageHandler;
-                    return await this.waitForClient(this.id + "/" + clientId);
+                    return await this.waitForClient(this.id + "/" + clientId, 20000);
                 case "window":
                     return await create_window(config, context);
+                case "iframe":
+                    return await create_window(config, context);
                 case "web-python":
-                    // create an inline webworker from /hypha-webpython.js
-                    const worker2 = new Worker(self.baseUrl + "hypha-webpython.js");
+                    // create an inline webworker from /hypha-app-webpython.js
+                    const worker2 = new Worker(self.baseUrl + "hypha-app-webpython.js");
                     const clientId2 = "client-" + Date.now();
                     const workspace2 = context.to.split(":")[0].split("/")[0];
                     this.connections[this.id + "/" + clientId2] = {
@@ -340,7 +354,7 @@ class Workspace {
                                         config,
                                     });
                                     worker2.onmessage = this.messageHandler;
-                                    this.waitForClient(this.id + "/" + clientId2).then(resolve).catch(reject);
+                                    this.waitForClient(this.id + "/" + clientId2, 20000).then(resolve).catch(reject);
                                 }, 10);
                             }
                         }
@@ -535,8 +549,9 @@ export class HyphaServer extends MessageEmitter {
 
         // register the default event
         this.on("add_window", (config)=> {
-            console.log("Adding window: ", config);
+            console.log("Creating window: ", config);
         });
+        this._start();
     }
 
     async emit(event, data) {
@@ -672,7 +687,7 @@ export class HyphaServer extends MessageEmitter {
         }
     }
 
-    start(){
+    _start(){
         if(HyphaServer.servers[this.url]){
             throw new Error(`Server already running at ${this.url}`);
         }
@@ -758,7 +773,7 @@ export class HyphaServer extends MessageEmitter {
 
     reset(){
         this.close();
-        this.start();
+        this._start();
     }
     
     close(){

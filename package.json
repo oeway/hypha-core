@@ -1,5 +1,5 @@
 {
-  "name": "hypha-server",
+  "name": "hypha-core",
   "version": "1.0.0",
   "description": "Get web starter kit",
   "scripts": {

@@ -3,10 +3,8 @@
 <head>
     <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
     <script type="module">
-        import { HyphaServer, connectToServer } from './lib.js';
+        import { HyphaServer, connectToServer } from './hypha-core.js';
         const hyphaServer = new HyphaServer();
-        hyphaServer.start();
-
         hyphaServer.on("add_window", (config) => {
             const wb = new WinBox(config.name || config.src.slice(0, 128), {
                 background: "#448aff",
@@ -15,6 +13,18 @@
         });
 
         connectToServer({server: hyphaServer, workspace: "default"}).then(async (api)=>{
+            let plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
+            await plugin.run();
+            console.log("web-worker plugin:", plugin)
+
+            plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
+            await plugin.run();
+            console.log("window plugin:", plugin)
+
+            plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webPythonTemplate.imjoy.html"})
+            await plugin.run();
+            console.log("web-python plugin:", plugin)
+
             const viewer = await api.createWindow({ src: "https://kaibu.org/#/app"});
             await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg");
         }).catch(console.error);

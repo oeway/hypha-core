@@ -13,7 +13,6 @@ async def execute(server, config):
         imjoyModule = types.ModuleType('imjoy')
         imjoyModule.api = server
         sys.modules['imjoy'] = imjoyModule
-        import imjoy
         import imjoy_rpc
         imjoy_rpc.api = server
         sys.modules['imjoy_rpc'] = imjoy_rpc

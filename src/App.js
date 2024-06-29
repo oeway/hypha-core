@@ -13,23 +13,20 @@ const App = () => {
 
   useEffect(() => {
     const hyphaServer = new HyphaServer();
-    hyphaServer.start();
-
-    hyphaServer.on("add_window", async (config) => {
+    hyphaServer.on("add_window", (config) => {
       const iframe = {
         src: config.src,
         id: config.window_id,
       };
-
-      if (config.pos === "main") {
-        setMainIframe(iframe);
-      } else if (config.pos === "side") {
+      if (config.pos === "side") {
         setSideIframes((prev) => [...prev, iframe]);
         setActiveSideIframe(iframe.id);
+      } else{
+        setMainIframe(iframe);
       }
     });
 
-    setupHyphaClients(hyphaServer.url);
+    setupHyphaClients(hyphaServer);
   }, []);
 
   const handleMouseDown = (e) => {
