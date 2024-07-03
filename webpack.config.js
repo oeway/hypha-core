@@ -6,13 +6,14 @@ const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
 
 // Configuration for lib as ESM
 const libConfig = {
+  name: 'core',
   entry: {
-    lib: path.resolve(__dirname, "src", "hypha-server.js"),
+    lib: path.resolve(__dirname, "src", "hypha-core.js"),
   },
   output: {
     filename: "hypha-core.js",
     path: path.resolve(__dirname, "build"),
-    clean: true,
+    // clean: true,
     library: {
       type: "module",
     },
@@ -27,12 +28,13 @@ const libConfig = {
 };
 
 appConfig = {
+  name: 'app',
   entry: path.resolve(__dirname, "src", "index.js"),
 
   output: {
     filename: "[name].js",
     path: path.resolve(__dirname, "build"),
-    clean: true,
+    // clean: true,
   },
 
   plugins: [

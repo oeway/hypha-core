@@ -260,11 +260,17 @@ class Workspace {
                     throw new Error("iframe element must be an iframe: " + config.window_id);
                 }
             }
+            // wait for the client to be ready
+            this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
+            // wait for element ready
+            await new Promise((resolve, reject) => {
+                elem.onload = resolve;
+                elem.onerror = reject;
+            });
             console.log("Created window for workspace: ", workspace, " with client id: ", clientId, elem);
             if(config.passive)
                 return;
-            // wait for the client to be ready
-            this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
+
             const waitClientPromise = this.waitForClient(this.id + "/" + clientId, 180000);
 
             // initialize the connection to the iframe
@@ -285,6 +291,7 @@ class Workspace {
                     config: config.config,
                 });
             }
+            console.log("Client ready: ", clientId, " in workspace: ", workspace, svc)
             return svc;
         }
         

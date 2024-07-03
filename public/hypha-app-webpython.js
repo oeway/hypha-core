@@ -14,6 +14,7 @@ async def execute(server, config):
         imjoyModule.api = server
         sys.modules['imjoy'] = imjoyModule
         import imjoy_rpc
+        import imjoy
         imjoy_rpc.api = server
         sys.modules['imjoy_rpc'] = imjoy_rpc
         exec(script["content"], {'imjoy': imjoy, 'imjoy_rpc': imjoy_rpc, 'api': server})

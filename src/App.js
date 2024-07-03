@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { setupHyphaClients } from "./hypha-clients";
-import { HyphaServer } from "./hypha-server";
+import { HyphaServer } from "./hypha-core";
 import "./tailwind.css";
 
 const App = () => {
