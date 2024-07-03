@@ -242,15 +242,8 @@ class Workspace {
                 config.window_id = "window-" + Date.now();
                 config.workspace = workspace;
                 await this.eventBus.emit("add_window", config);
-                // use a while loop to check if elem = document.getElementById(config.window_id) exists
-                // and set a timeout of 18s
-                for (let i = 0; i < 9; i++) {
-                    elem = document.getElementById(config.window_id);
-                    if(elem){
-                        break;
-                    }
-                    await new Promise((resolve) => setTimeout(resolve, 500));
-                }
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                elem = document.getElementById(config.window_id);
                 if(!elem){
                     // throw new Error("Window element not found: " + config.window_id);
                     throw new Error(`iframe element not found ${config.window_id} in ${9*500/1000} s`)
@@ -268,9 +261,10 @@ class Workspace {
                 elem.onerror = reject;
             });
             console.log("Created window for workspace: ", workspace, " with client id: ", clientId, elem);
-            if(config.passive)
+            if(config.passive){
+                delete this.connections[this.id + "/" + clientId];
                 return;
-
+            }
             const waitClientPromise = this.waitForClient(this.id + "/" + clientId, 180000);
 
             // initialize the connection to the iframe
