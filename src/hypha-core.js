@@ -95,6 +95,31 @@ class Workspace {
             }
             return info;
         }
+
+        this.plugins = {};
+        this.eventBus.on("client_ready", async (svc) => {
+            this.plugins[svc.id] = svc;
+        });
+
+        const get_plugin = async (config, context) => {
+            if(typeof config === "string"){
+                return await load_plugin({src: config}, context);
+            }
+            else if(config.id){
+                return this.plugins[config.id];
+            }
+            else if(config.name){
+                for (const [key, value] of Object.entries(this.plugins)) {
+                    if(value.name === config.name){
+                        return value;
+                    }
+                }
+            }
+            else{
+                throw new Error("Please provide either id or name for the plugin");
+            }
+        }
+
         const register_service = async (service, context) => {
             const sv = await rpc.get_remote_service(context["from"] + ":built-in")
             service["config"] = service["config"] || {}
@@ -212,7 +237,7 @@ class Workspace {
             else if(config.id && config.type === "window" && config.script){
                 config.src = self.baseUrl + "hypha-app-iframe.html";
             }
-            const workspace = context.to.split(":")[0].split("/")[0];
+            const workspace = this.id;
             const clientId = "client-" + Date.now();
             let elem;
             this.connections[this.id + "/" + clientId] = {
@@ -292,11 +317,16 @@ class Workspace {
         const load_plugin = async (config, context) => {
             let code;
             const src = config.src;
+            if(src.startsWith("http") && !src.split("?")[0].endsWith(".imjoy.html")){
+                return await create_window(config, context);
+            }
+            // imjoy plugin file url
             if(src.startsWith("http")){
                 // fetch the plugin code
                 const resp = await fetch(src);
                 code = await resp.text();
             }
+            // imjoy source code
             else if(src.includes("\n")){
                 code = src;
             }
@@ -309,7 +339,7 @@ class Workspace {
                     // create an inline webworker from /hypha-app-webworker.js
                     const worker = new Worker(self.baseUrl + "hypha-app-webworker.js");
                     const clientId = "client-" + Date.now();
-                    const workspace = context.to.split(":")[0].split("/")[0];
+                    const workspace = this.id;
                     this.connections[this.id + "/" + clientId] = {
                         workspace: workspace,
                         websocket: null,
@@ -334,7 +364,7 @@ class Workspace {
                     // create an inline webworker from /hypha-app-webpython.js
                     const worker2 = new Worker(self.baseUrl + "hypha-app-webpython.js");
                     const clientId2 = "client-" + Date.now();
-                    const workspace2 = context.to.split(":")[0].split("/")[0];
+                    const workspace2 = this.id;
                     this.connections[this.id + "/" + clientId2] = {
                         workspace: workspace2,
                         websocket: null,
@@ -368,8 +398,7 @@ class Workspace {
             }
 
         }
-
-        await rpc.register_service({
+        const default_services = {
             "id": "default",
             "name": "Default workspace management service",
             "description": "Services for managing workspace.",
@@ -392,6 +421,12 @@ class Workspace {
             },
             "alert": (msg, context) => {
                 alert(msg);
+            },
+            "showProgress": (progress, context) => {
+                console.log("showProgress", progress);
+            },
+            "showMessage": (msg, context) => {
+                console.log(msg);
             },
             "log": (msg, context) => {
                 console.log(msg);
@@ -424,8 +459,10 @@ class Workspace {
             "generate_token": generate_token,
             "generateToken": generate_token,
             "loadPlugin": load_plugin,
-            "createWindow": create_window
-        })
+            "createWindow": create_window,
+            "getPlugin": get_plugin,
+        }
+        await rpc.register_service(Object.assign(default_services, config.default_services || {}))
         this.rpc = rpc;
     }
 
@@ -547,6 +584,7 @@ export class HyphaServer extends MessageEmitter {
         this.wsUrl = this.url.replace("https", "wss").replace("http", "ws") + "/ws";
         this.server = null;
         this.connections = {};
+        this.defaultServices = config.default_services || {};
         this.imjoyPluginWindows = new Map();
 
         // register the default event
@@ -746,6 +784,7 @@ export class HyphaServer extends MessageEmitter {
             }
             
             const ws = await Workspace.get({
+                "default_services": this.defaultServices,
                 "base_url": this.baseUrl,
                 "server_url": this.url,
                 "message_handler": this.messageHandler,

@@ -1,37 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hypha Lite</title>
+
     <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
     <script type="module">
-        import { HyphaServer, connectToServer } from './hypha-core.js';
-        const hyphaServer = new HyphaServer();
-        hyphaServer.on("add_window", (config) => {
-            const wb = new WinBox(config.name || config.src.slice(0, 128), {
-                background: "#448aff",
-            });
-            wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
+      import { HyphaServer, connectToServer } from "./hypha-core.js";
+      const hyphaServer = new HyphaServer();
+      hyphaServer.on("add_window", (config) => {
+        const wb = new WinBox(config.name || config.src.slice(0, 128), {
+          background: "#448aff",
         });
+        wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
+      });
 
-        connectToServer({server: hyphaServer, workspace: "default"}).then(async (api)=>{
-            let plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
-            await plugin.run({});
-            console.log("web-worker plugin:", plugin)
-
-            plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
-            await plugin.run({});
-            console.log("window plugin:", plugin)
-
-            plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webPythonTemplate.imjoy.html"})
-            await plugin.run({});
-            console.log("web-python plugin:", plugin)
-
-            const viewer = await api.createWindow({ src: "https://kaibu.org/#/app"});
-            await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg");
-        }).catch(console.error);
+      const api = await connectToServer({
+        server: hyphaServer,
+        workspace: "default",
+      });
+      // Function to handle loading and running a plugin
+      async function loadPluginFromUrl(url) {
+        const plugin = await api.loadPlugin({ src: url });
+        await plugin.run({ config: {}, data: {} });
+        console.log("Loaded and ran plugin from URL:", url);
+      }
+      window.loadPlugin = loadPluginFromUrl;
     </script>
-</head>
+    <script>
+      // If url query contains plugin, load and run the plugin
+      const urlParams = new URLSearchParams(window.location.search);
+      const pluginUrls = urlParams.getAll("plugin");
+      for (const url of pluginUrls) {
+        window.loadPlugin(url);
+      }
 
-<body>
+      // Load plugin from menu
+      window.toggleDropdown = function () {
+        const dropdown = document.getElementById("dropdownMenu");
+        dropdown.style.display =
+          dropdown.style.display === "block" ? "none" : "block";
+      };
+
+      window.promptLoadPlugin = async function () {
+        const url = prompt("Enter the plugin URL:");
+        if (url) {
+          await loadPluginFromUrl(url);
+        }
+      };
+      // Close the dropdown if the user clicks outside of it
+      window.onclick = function (event) {
+        if (!event.target.matches(".icon")) {
+          const dropdown = document.getElementById("dropdownMenu");
+          if (dropdown.style.display === "block") {
+            dropdown.style.display = "none";
+          }
+        }
+      };
+    </script>
+    <style>
+      .icon-container {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+      }
+
+      .icon {
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+      }
+
+      .dropdown {
+        display: none;
+        position: absolute;
+        top: 50px;
+        width: 120px;
+        right: 0;
+        background-color: white;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        z-index: 1001;
+        font-family: Arial, sans-serif;
+      }
+
+      .dropdown a {
+        display: block;
+        padding: 10px;
+        text-decoration: none;
+        color: black;
+      }
+
+      .dropdown a:hover {
+        background-color: #f0f0f0;
+      }
+      #root {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+      }
+    </style>
+  </head>
+
+  <body>
     <div id="root"></div>
-</body>
+    <div class="icon-container">
+      <img
+        alt="Hypha Logo"
+        src="https://raw.githubusercontent.com/amun-ai/hypha/main/docs/img/hypha-icon-black.svg"
+        class="icon"
+        onclick="toggleDropdown()"
+      />
+      <div class="dropdown" id="dropdownMenu">
+        <a href="#" onclick="promptLoadPlugin()">+ Load Plugin</a>
+        <a href="#" onclick="loadPlugin('https://if.imjoy.io')">ImJoy Fiddle</a>
+      </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.birds.min.js"></script>
+    <script>
+      VANTA.BIRDS({
+        el: "#root",
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.0,
+        minWidth: 200.0,
+        scale: 1.0,
+        scaleMobile: 1.0,
+        backgroundColor: 0xffffff,
+        color1: 0x4db9f5,
+        color2: 0xf2a4a4,
+        colorMode: "lerp",
+        birdSize: 3.2,
+        wingSpan: 36.0,
+        speedLimit: 1.0,
+        separation: 86.0,
+        alignment: 66.0,
+        cohesion: 64.0,
+        quantity: 1.0,
+      });
+    </script>
+  </body>
 </html>
