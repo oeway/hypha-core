@@ -422,6 +422,12 @@ class Workspace {
             "alert": (msg, context) => {
                 alert(msg);
             },
+            "confirm": (msg, context) => {
+                return confirm(msg);
+            },
+            "prompt": (msg, default_value, context) => {
+                return prompt(msg, default_value);
+            },
             "showProgress": (progress, context) => {
                 console.log("showProgress", progress);
             },
