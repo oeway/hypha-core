@@ -1,6 +1,6 @@
 {
   "name": "hypha-core",
-  "version": "1.0.0",
+  "version": "0.1.2",
   "description": "Get web starter kit",
   "scripts": {
     "start": "webpack serve --mode=development",

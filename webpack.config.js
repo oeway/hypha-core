@@ -11,8 +11,8 @@ const libConfig = {
     lib: path.resolve(__dirname, "src", "hypha-core.js"),
   },
   output: {
-    filename: "hypha-core.js",
-    path: path.resolve(__dirname, "build"),
+    filename: "hypha-core.mjs",
+    path: path.resolve(__dirname, "dist"),
     // clean: true,
     library: {
       type: "module",
@@ -33,7 +33,7 @@ appConfig = {
 
   output: {
     filename: "[name].js",
-    path: path.resolve(__dirname, "build"),
+    path: path.resolve(__dirname, "dist"),
     // clean: true,
   },
 
