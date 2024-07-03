@@ -36,6 +36,7 @@ class Workspace {
                         clearTimeout(timeoutId); // clear the timeout
                         this.rpc.get_remote_service(defaultService.id).then(async (svc)=>{
                             try{
+                                await this.eventBus.emit("client_ready", svc);
                                 resolve(svc);
                             }
                             catch(e){
