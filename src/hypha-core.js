@@ -586,8 +586,17 @@ export class HyphaServer extends MessageEmitter {
             throw new Error("Please provide either url or port, not both.");
         }
         this.WebSocketClass = WebSocket;
-        this.url = config.url || "https://local-hypha-server:" + this.port;
-        this.wsUrl = this.url.replace("https", "wss").replace("http", "ws") + "/ws";
+        if (config.url && (config.url.startsWith("wss://") || config.url.startsWith("ws://"))) {
+            if (!config.url.endsWith("/ws")) {
+                throw new Error("Please provide a valid wss url ending with /ws");
+            }
+            this.url = config.url.replace("wss://", "https://").replace("ws://", "http://").slice(0, -3);
+            this.wsUrl = config.url;
+        }
+        else {
+            this.url = config.url || "https://local-hypha-server:" + this.port;
+            this.wsUrl = this.url.replace("https://", "wss://").replace("http://", "ws://") + "/ws";
+        }
         this.server = null;
         this.connections = {};
         this.defaultServices = config.default_services || {};
