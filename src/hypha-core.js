@@ -247,7 +247,7 @@ class Workspace {
                     elem.contentWindow.postMessage(data);
                 },
             }
-            // create iframe
+            // create iframe; hidden by default
             if (config.type === "iframe") {
                 elem = document.createElement("iframe");
                 elem.src = config.src;
@@ -264,6 +264,7 @@ class Workspace {
                 }
             }
             else {
+                // window type need to be created by the add_window event
                 config.window_id = "window-" + Date.now();
                 config.workspace = workspace;
                 await this.eventBus.emit("add_window", config);
