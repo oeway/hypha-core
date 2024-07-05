@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypha App</title>
+    <script src="https://cdn.jsdelivr.net/npm/imjoy-rpc@latest/dist/imjoy-rpc.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/imjoy-rpc@0.5.55/dist/hypha-rpc-websocket.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel-plugin-transform-modules-umd.min.js"></script>
+    <script src="https://unpkg.com/source-map@0.7.3/dist/source-map.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prettier/2.3.2/standalone.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prettier/2.3.2/parser-babel.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/styles/default.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/highlight.min.js"></script>
+    
+    <script>
+        async function initializeSourceMap() {
+            sourceMap.SourceMapConsumer.initialize({
+                "lib/mappings.wasm": "https://unpkg.com/source-map@0.7.3/lib/mappings.wasm",
+            });
+        }
+        initializeSourceMap().catch(console.error);
+    </script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+if (window.self !== window.top) {
+    hyphaWebsocketClient.setupLocalClient({enable_execution: false}).then((api)=>{
+        api.export({
+            setup(){
+                console.log("Hypha client is ready", api)
+            },
+            async renderApp(script){
+                let func, sMap, module, formattedScript;
+                try {
+                    const transformed = Babel.transform(script, {
+                        presets: ['react'],
+                        plugins: ['transform-modules-umd'],
+                        sourceMaps: true,
+                        filename: 'userScript.js'
+                    });
+
+                    const transformedScript = transformed.code;
+                    sMap = transformed.map;
+
+                    module = { exports: {} };
+                    func = new Function('module', 'exports', 'React', transformedScript);
+                    // Format the original script using Prettier
+                    formattedScript = prettier.format(script, {
+                        parser: "babel",
+                        plugins: prettierPlugins
+                    });
+                } catch (transformationError) {
+                    console.error("Failed to transform the script:", transformationError.message);
+                    const {errorMessage, errorContext} = await handleError(transformationError, null, script);
+                    throw new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext);
+                }
+                try {
+                    await new Promise((resolve, reject) => {
+                        const setError = (error) => {
+                            reject(error);
+                        };
+                        func(module, module.exports, React);
+                        const Component = module.exports.default;
+
+                        ReactDOM.render(
+                            React.createElement(Main, { Component, script: formattedScript, sMap, setError }),
+                            document.getElementById('root'),
+                            resolve
+                        );
+                    });
+                } catch (executionError) {
+                    console.error("Failed to execute the script:", executionError.message);
+                    const {errorMessage, errorContext} = await handleError(executionError, sMap, script);
+                    throw new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext);
+                }
+            }
+        })
+    }).catch(console.error);
+} else {
+    console.log("The page is not in an iframe, imjoy rpc will not be available.");
+}
+
+async function handleError(error, sMap, originalScript) {
+    let errorMessage = error.message;
+    let errorContext = '';
+    let errorLineNumber = null;
+
+    if (sMap) {
+        const smc = await new sourceMap.SourceMapConsumer(sMap);
+        const scriptLines = originalScript.split('\n');
+        
+        // Scan the entire script for potential issues
+        for (let i = 0; i < scriptLines.length; i++) {
+            if (scriptLines[i].includes('cons') && !scriptLines[i].includes('const')) {
+                errorLineNumber = i + 1;
+                break;
+            }
+        }
+
+        if (errorLineNumber === null) {
+            // If we didn't find 'cons', fall back to the reported error line
+            const stackLines = error.stack.split('\n');
+            const match = stackLines[1].match(/\(eval at loadUI.+?<anonymous>:(\d+):(\d+)\)/);
+            if (match) {
+                const originalPosition = smc.originalPositionFor({
+                    line: parseInt(match[1]),
+                    column: parseInt(match[2])
+                });
+                if (originalPosition && originalPosition.line) {
+                    errorLineNumber = originalPosition.line;
+                }
+            }
+        }
+
+        if (errorLineNumber !== null) {
+            // Get 3 lines before and after the error
+            const startLine = Math.max(0, errorLineNumber - 4);
+            const endLine = Math.min(scriptLines.length - 1, errorLineNumber + 2);
+            errorContext = scriptLines.slice(startLine, endLine + 1).map((line, index) => {
+                const lineNumber = startLine + index + 1;
+                const marker = lineNumber === errorLineNumber ? '> ' : '  ';
+                return `${marker}${lineNumber}: ${line}`;
+            }).join('\n');
+            
+            errorMessage += ` (at line ${errorLineNumber})`;
+        }
+
+        smc.destroy();
+    }
+
+    ReactDOM.render(
+        React.createElement(ErrorDisplay, { 
+            error: errorMessage, 
+            context: errorContext, 
+            lineNumber: errorLineNumber 
+        }),
+        document.getElementById('root')
+    );
+    return { errorMessage, errorContext };
+}
+
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error) {
+        handleError(error, this.props.sourceMap, this.props.originalScript).then(({errorMessage, errorContext}) => {
+            this.props.setError(new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext));
+        });
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return null; // The error will be displayed by handleError
+        }
+
+        return this.props.children;
+    }
+}
+
+function ErrorDisplay({ error, context }) {
+    return React.createElement('div', { className: 'p-4 bg-red-100 border border-red-400 text-red-700 rounded' },
+        React.createElement('h1', { className: 'text-lg font-bold mb-2' }, 'Failed to load UI component'),
+        React.createElement('h2', { className: 'text-lg font-bold mb-2' }, 'Error:'),
+        React.createElement('pre', { className: 'whitespace-pre-wrap' }, error),
+        context && React.createElement('div', { className: 'mt-2' },
+            React.createElement('strong', null, 'Code context:'),
+            React.createElement('pre', { className: 'whitespace-pre-wrap bg-red-200 p-1 mt-1' }, context)
+        )
+    );
+}
+</script>
+<script type="text/babel" preset="react">
+const { useState, useEffect } = React;
+
+const App = ({ Component }) => {
+    return (
+        <Component />
+    );
+};
+
+const CodeView = ({ script }) => {
+    useEffect(() => {
+        hljs.highlightAll();
+    }, [script]);
+
+    return (
+        <div className="flex items-center justify-center h-screen bg-gray-900 text-white p-4">
+            <pre className="w-full max-w-3xl p-4 bg-gray-800 rounded-lg shadow-lg overflow-x-auto">
+                <code className="whitespace-pre-wrap hljs language-javascript">{script}</code>
+            </pre>
+        </div>
+    );
+};
+
+const FloatingSwitch = ({ mode, setMode }) => {
+    return (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex">
+            <div className="relative w-24 h-8">
+                <div className="absolute top-0 left-0 w-full h-full bg-gray-200 rounded-full shadow-inner"></div>
+                <div className={`absolute top-0 left-0 w-1/2 h-full bg-blue-500 rounded-full shadow transition-transform duration-300 ${mode === "app" ? "transform translate-x-0" : "transform translate-x-full"}`}></div>
+                <button
+                    onClick={() => setMode("app")}
+                    className="absolute top-0 left-0 w-1/2 h-full z-10 flex items-center justify-center text-sm font-semibold focus:outline-none"
+                >
+                    <span className={`${mode === "app" ? "text-white" : "text-black"}`}>App</span>
+                </button>
+                <button
+                    onClick={() => setMode("script")}
+                    className="absolute top-0 right-0 w-1/2 h-full z-10 flex items-center justify-center text-sm font-semibold focus:outline-none"
+                >
+                    <span className={`${mode === "script" ? "text-white" : "text-black"}`}>Script</span>
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const Main = ({ Component, script, sMap, setError }) => {
+    const [mode, setMode] = useState("app");
+
+    return (
+    <>
+        <FloatingSwitch mode={mode} setMode={setMode} />
+        {mode === "app" ? <App Component={Component} /> : <CodeView script={script} />}
+    </>
+    );
+};
+
+
+const DefaultApp = () => {
+    return (
+    <div className="flex items-center justify-center h-screen bg-gradient-to-r from-blue-500 to-purple-500">
+        <h1 className="text-6xl font-bold text-white shadow-lg">Hello!</h1>
+    </div>
+    );
+};
+
+ReactDOM.render(<DefaultApp />, document.getElementById('root'));
+</script>
+</body>
+</html>

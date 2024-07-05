@@ -40,52 +40,55 @@ class ImJoyPlugin():
 api.export(ImJoyPlugin())
 </script>
 `
-
 export async function setupHyphaClients(server) {
 
     const api = await hyphaWebsocketClient.connectToServer({ server, workspace: "ws-1", client_id: "client-1" })
+    const uiDesigner = await api.createWindow({ src: "http://localhost:3000/react-ui.html", pos: "side" })
+
     
     let kaibuViewer = null;
+    let currentScript = "";
     const chatbotExtension = {
         _rintf: true,
-        id: "image-viewer",
+        id: "ui-designer",
         type: "bioimageio-chatbot-extension",
-        name: "Image Viewer",
-        description: "An extension to show images in Kaibu Interactive Viewer",
+        name: "Design React UI",
+        description: "React UI Designer, design and render React UI components. The UI script along with the rendered view will be displayed, no need to show code to the end user",
         config: {
             visibility: "public",
             require_context: false,
         },
+        get_state(){
+            return {
+                "Current Script": currentScript
+            };
+        },
         get_schema() {
             return {
-                show_image: {
+                render_app: {
                     type: "object",
-                    title: "ShowImage",
-                    description: "Show Image in Kaibu Interactive Viewer",
+                    title: "RenderApp",
+                    description: "Render a React Component with babel(7.24.7), react(17.0.2) and tailwindcss for styling.",
                     properties: {
-                        image_url: {
+                        script: {
                             type: "string",
-                            description: "The URL of the image to show",
-                        },
-                        name: {
-                            type: "string",
-                            description: "The name of the image",
+                            description: "A react component script, for example: `const {useState, useEffect} = React; const App = () => { return <div>Hello World!</div>; }; export default App;`",
                         },
                     },
-                    required: ["image_url", "name"],
+                    required: ["script"],
                 }
             };
         },
         tools: {
-            async show_image(config) {
-                kaibuViewer = kaibuViewer || await api.createWindow({ src: "https://kaibu.org/#/app", pos: "side"})
-                const layer = await kaibuViewer.view_image(config.image_url, {name: config.name})
-                return `Image displayed in Kaibu Viewer, layer id ${layer.id}`
+            async render_app(config) {
+                await uiDesigner.renderApp(config.script);
+                currentScript = config.script;
+                return "The UI script displayed to the user, and rendered as React UI successfully!";
             }
         }
     }
-    // const chatbot = await api.createWindow({ src: `https://bioimage.io/chat?assistant=Bridget`, pos: "main"})
-    // await chatbot.registerExtension(chatbotExtension)
+    const chatbot = await api.createWindow({ src: `http://127.0.0.1:9527/chat?assistant=Skyler`, pos: "main"})
+    await chatbot.registerExtension(chatbotExtension);
     // const viewer = await api.createWindow({ src: "https://kaibu.org/#/app", pos: "main"})
     // await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
 
@@ -129,11 +132,11 @@ export async function setupHyphaClients(server) {
 
 
 
-    const iframeWindow = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
-    await iframeWindow.run();
-    console.log("iframeWindow:", iframeWindow)
+    // const iframeWindow = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
+    // await iframeWindow.run();
+    // console.log("iframeWindow:", iframeWindow)
 
-    const plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
-    await plugin.run();
-    console.log("web-worker plugin:", plugin)
+    // const plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
+    // await plugin.run();
+    // console.log("web-worker plugin:", plugin)
 };

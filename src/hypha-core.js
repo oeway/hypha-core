@@ -281,6 +281,11 @@ class Workspace {
             }
             // wait for the client to be ready
             this.connections[this.id + "/" + clientId].contentWindow = elem.contentWindow;
+            
+            let waitClientPromise;
+            if (!config.passive) {
+                waitClientPromise = this.waitForClient(this.id + "/" + clientId, 180000);
+            }
             // wait for element ready
             await new Promise((resolve, reject) => {
                 elem.onload = resolve;
@@ -291,8 +296,6 @@ class Workspace {
                 delete this.connections[this.id + "/" + clientId];
                 return;
             }
-            const waitClientPromise = this.waitForClient(this.id + "/" + clientId, 180000);
-
             // initialize the connection to the iframe
             elem.contentWindow.postMessage({
                 type: "initializeHyphaClient",
@@ -450,12 +453,12 @@ class Workspace {
             "critical": (msg, context) => {
                 console.error(msg);
             },
-            "update_client_info": (info, context) => {
+            "update_client_info": async (info, context) => {
                 const cid = this.id + "/" + info.id;
                 info.id = cid;
                 info.workspaceObj = this;
                 Workspace.clients[cid] = Object.assign(Workspace.clients[cid] || {}, info);
-                this.eventBus.emit("client_info_updated", info);
+                await this.eventBus.emit("client_info_updated", info);
             },
             "get_connection_info": get_connection_info,
             "getConnectionInfo": get_connection_info,
@@ -687,7 +690,7 @@ export class HyphaServer extends MessageEmitter {
             core.on("remoteReady", async () => {
                 const api = core.getRemote();
                 api.id = `${cid}:default`;
-                workspaceObj.eventBus.emit("client_info_updated", {
+                await workspaceObj.eventBus.emit("client_info_updated", {
                     id: cid,
                     imjoyApi: api,
                 })
