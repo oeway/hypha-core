@@ -4,11 +4,13 @@
   "description": "Get web starter kit",
   "scripts": {
     "start": "webpack serve --mode=development",
-    "build": "webpack --mode=production"
+    "build": "webpack --mode=production",
+    "test": "playwright test"
   },
   "author": "Himanshu Singh",
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.45.1",
     "css-loader": "^6.8.1",
     "esbuild-loader": "^3.0.1",
     "html-webpack-plugin": "^5.5.3",

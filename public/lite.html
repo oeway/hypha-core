@@ -27,13 +27,12 @@
         console.log("Loaded and ran plugin from URL:", url);
       }
       window.loadPlugin = loadPluginFromUrl;
-    </script>
-    <script>
+
       // If url query contains plugin, load and run the plugin
       const urlParams = new URLSearchParams(window.location.search);
       const pluginUrls = urlParams.getAll("plugin");
       for (const url of pluginUrls) {
-        window.loadPlugin(url);
+        await window.loadPlugin(url);
       }
 
       // Load plugin from menu

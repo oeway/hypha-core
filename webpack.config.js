@@ -1,3 +1,4 @@
+// webpack.config.js
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const { EsbuildPlugin } = require("esbuild-loader");
@@ -27,16 +28,14 @@ const libConfig = {
   },
 };
 
-appConfig = {
+const appConfig = {
   name: 'app',
   entry: path.resolve(__dirname, "src", "index.js"),
-
   output: {
     filename: "[name].js",
     path: path.resolve(__dirname, "dist"),
     // clean: true,
   },
-
   plugins: [
     new HtmlWebpackPlugin({
       title: "Hypha Core",
@@ -44,12 +43,10 @@ appConfig = {
     }),
     new MiniCssExtractPlugin(),
   ],
-
   resolve: {
     extensions: [".ts", ".js", ".jsx", ".tsx"],
     plugins: [new TsconfigPathsPlugin()],
   },
-
   module: {
     rules: [
       {
@@ -95,7 +92,6 @@ appConfig = {
       },
     ],
   },
-
   optimization: {
     minimizer: [
       new EsbuildPlugin({
@@ -104,10 +100,9 @@ appConfig = {
       }),
     ],
   },
-
   devServer: {
     port: 3000,
-    open: true,
+    // open: true,
   },
 };
 
