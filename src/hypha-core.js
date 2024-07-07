@@ -714,7 +714,7 @@ export class HyphaServer extends MessageEmitter {
             else if (event.data.type === "hyphaClientReady") {
             }
             else {
-                console.debug("Ignoring message without workspace info: ", event.data);
+                // console.debug("Ignoring message without workspace info: ", event.data);
             }
             return;
         }

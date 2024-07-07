@@ -44,7 +44,7 @@ export async function setupHyphaClients(server) {
 
     const api = await hyphaWebsocketClient.connectToServer({ server, workspace: "ws-1", client_id: "client-1" })
     const uiDesigner = await api.createWindow({ src: "http://localhost:3000/react-ui.html", pos: "side" })
-
+    await uiDesigner.renderApp(`const {useState, useEffect} = React; const App = () => { return <div>Hello World!</div>; }; export default App;`)
     
     let kaibuViewer = null;
     let currentScript = "";

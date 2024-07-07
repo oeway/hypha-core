@@ -183,11 +183,15 @@ function ErrorDisplay({ error, context }) {
 }
 </script>
 <script type="text/babel" preset="react">
-const { useState, useEffect } = React;
+const { useState, useEffect, StrictMode } = React;
 
 const App = ({ Component }) => {
     return (
-        <Component />
+        <div className="w-full h-full max-w-3xl p-2 overflow-x-auto">
+        <StrictMode>
+            <Component />
+        </StrictMode>
+        </div>
     );
 };
 
@@ -197,8 +201,8 @@ const CodeView = ({ script }) => {
     }, [script]);
 
     return (
-        <div className="flex items-center justify-center h-screen bg-gray-900 text-white p-4">
-            <pre className="w-full max-w-3xl p-4 bg-gray-800 rounded-lg shadow-lg overflow-x-auto">
+        <div className="flex items-center justify-center h-screen bg-gray-900 text-white p-0">
+            <pre className="w-full h-full max-w-3xl p-2 bg-gray-800 rounded-lg shadow-lg overflow-x-auto">
                 <code className="whitespace-pre-wrap hljs language-javascript">{script}</code>
             </pre>
         </div>
@@ -207,19 +211,19 @@ const CodeView = ({ script }) => {
 
 const FloatingSwitch = ({ mode, setMode }) => {
     return (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex">
-            <div className="relative w-24 h-8">
+        <div className="fixed top-1 left-1/2 transform -translate-x-1/2 z-50 flex">
+            <div className="relative w-24 h-6">
                 <div className="absolute top-0 left-0 w-full h-full bg-gray-200 rounded-full shadow-inner"></div>
                 <div className={`absolute top-0 left-0 w-1/2 h-full bg-blue-500 rounded-full shadow transition-transform duration-300 ${mode === "app" ? "transform translate-x-0" : "transform translate-x-full"}`}></div>
                 <button
                     onClick={() => setMode("app")}
-                    className="absolute top-0 left-0 w-1/2 h-full z-10 flex items-center justify-center text-sm font-semibold focus:outline-none"
+                    className="absolute top-0 left-0 w-1/2 h-full z-10 flex items-center justify-center text-xs font-semibold focus:outline-none"
                 >
                     <span className={`${mode === "app" ? "text-white" : "text-black"}`}>App</span>
                 </button>
                 <button
                     onClick={() => setMode("script")}
-                    className="absolute top-0 right-0 w-1/2 h-full z-10 flex items-center justify-center text-sm font-semibold focus:outline-none"
+                    className="absolute top-0 right-0 w-1/2 h-full z-10 flex items-center justify-center text-xs font-semibold focus:outline-none"
                 >
                     <span className={`${mode === "script" ? "text-white" : "text-black"}`}>Script</span>
                 </button>

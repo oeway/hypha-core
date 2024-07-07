@@ -17,6 +17,7 @@ const App = () => {
       const iframe = {
         src: config.src,
         id: config.window_id,
+        name: config.name || config.src,
       };
       if (config.pos === "side") {
         setSideIframes((prev) => [...prev, iframe]);
@@ -70,7 +71,7 @@ const App = () => {
             >
               {sideIframes.map((iframe) => (
                 <option key={iframe.id} value={iframe.id}>
-                  {iframe.id}
+                  {iframe.name}
                 </option>
               ))}
             </select>
