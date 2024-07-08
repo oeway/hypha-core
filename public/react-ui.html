@@ -16,7 +16,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prettier/2.3.2/parser-babel.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/styles/default.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/highlight.min.js"></script>
-    
     <script>
         async function initializeSourceMap() {
             sourceMap.SourceMapConsumer.initialize({
@@ -25,17 +24,82 @@
         }
         initializeSourceMap().catch(console.error);
     </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mocha/8.4.0/mocha.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mocha/8.4.0/mocha.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chai/4.3.4/chai.min.js"></script>
+    <script type="module">
+        
+    </script>
 </head>
 <body>
 <div id="root"></div>
-<script>
+<div id="mocha"></div>
+<script type="module">
+import * as testingLibraryDom from 'https://cdn.skypack.dev/@testing-library/dom@10.3.1'
+import testingLibraryUserEvent from 'https://cdn.skypack.dev/@testing-library/user-event@14.5.2'
+{{/*  import { getQueriesForElement } from 'https://cdn.skypack.dev/@testing-library/dom@10.3.1'  */}}
+import * as matchers from 'https://cdn.skypack.dev/@testing-library/jest-dom/matchers'
+mocha.setup('bdd');
+mocha.cleanReferencesAfterRun(false);
+const { expect } = chai;
+// Extend Chai's expect with Testing Library's matchers
+Object.keys(matchers).forEach((key) => {
+    chai.Assertion.addMethod(key, function (...args) {
+        return matchers[key](this._obj, ...args);
+    });
+});
+// window.expect = expect;
+
 if (window.self !== window.top) {
     hyphaWebsocketClient.setupLocalClient({enable_execution: false}).then((api)=>{
+        async function testApp(testScript) {
+            try {
+                const transformedTestScript = Babel.transform(testScript, {
+                    presets: ['react'],
+                    plugins: ['transform-modules-umd']
+                }).code;
+        
+                const testFunc = new Function('React', 'ReactDOM', 'testingLibraryDom', 'testingLibraryUserEvent', 'expect', 'describe', 'it', transformedTestScript);
+        
+                return new Promise((resolve, reject) => {
+                    // Reset Mocha's state
+                    mocha.suite.suites.length = 0;
+                    // Define a custom Mocha reporter
+                    class CustomReporter {
+                        constructor(runner) {
+                            const results = [];
+                            runner.on('pass', function(test) {
+                                results.push(`PASS: ${test.fullTitle()}`);
+                            });
+                            runner.on('fail', function(test, err) {
+                                results.push(`FAIL: ${test.fullTitle()} - ${err.message}`);
+                            });
+                            runner.on('end', function() {
+                                const report = results.join('\n');
+                                resolve(report);
+                            });
+                        }
+                    }
+        
+                    // Add the custom reporter
+                    mocha.reporter(CustomReporter);
+        
+                    // Execute the test function
+                    testFunc(React, ReactDOM, testingLibraryDom, testingLibraryUserEvent, expect, describe, it);
+        
+                    // Run the tests
+                    mocha.run();
+                });
+            } catch (testError) {
+                console.error("Failed to execute the test script:", testError.message);
+                return Promise.reject(testError);
+            }
+        }
         api.export({
             setup(){
                 console.log("Hypha client is ready", api)
             },
-            async renderApp(script){
+            async renderApp(script, testScript){
                 let func, sMap, module, formattedScript;
                 try {
                     const transformed = Babel.transform(script, {
@@ -74,13 +138,18 @@ if (window.self !== window.top) {
                             resolve
                         );
                     });
+
+                    return testScript && await testApp(testScript);
                 } catch (executionError) {
                     console.error("Failed to execute the script:", executionError.message);
                     const {errorMessage, errorContext} = await handleError(executionError, sMap, script);
                     throw new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext);
                 }
-            }
-        })
+            },
+            
+            
+            
+        });
     }).catch(console.error);
 } else {
     console.log("The page is not in an iframe, imjoy rpc will not be available.");
@@ -202,7 +271,7 @@ const CodeView = ({ script }) => {
 
     return (
         <div className="flex items-center justify-center h-screen bg-gray-900 text-white p-0">
-            <pre className="w-full h-full max-w-3xl p-2 bg-gray-800 rounded-lg shadow-lg overflow-x-auto">
+            <pre className="w-full h-full max-w-3xl p-2 rounded-lg shadow-lg overflow-x-auto">
                 <code className="whitespace-pre-wrap hljs language-javascript">{script}</code>
             </pre>
         </div>
