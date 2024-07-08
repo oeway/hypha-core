@@ -19,11 +19,11 @@ const App = () => {
         id: config.window_id,
         name: config.name || config.src,
       };
-      if (config.pos === "side") {
+      if (config.pos === "main") {
+        setMainIframe(iframe);
+      } else{
         setSideIframes((prev) => [...prev, iframe]);
         setActiveSideIframe(iframe.id);
-      } else{
-        setMainIframe(iframe);
       }
     });
 

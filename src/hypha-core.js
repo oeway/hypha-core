@@ -140,6 +140,11 @@ const defaultServices = {
         const workspaceObj = Workspace.workspaces[workspaceId];
         return workspaceObj.getPlugin(config, context);
     },
+    "getWindow": async (config, context) => {
+        const workspaceId = context.to.split('/')[0];
+        const workspaceObj = Workspace.workspaces[workspaceId];
+        return workspaceObj.getWindow(config, context);
+    },
 };
 
 class Workspace {
@@ -213,6 +218,7 @@ class Workspace {
             config.user_info,
             config.method_timeout || 60
         );
+        this.windows = [];
         this.plugins = {};
         this.eventBus.on("client_ready", async (svc) => {
             this.plugins[svc.id] = svc;
@@ -327,6 +333,13 @@ class Workspace {
             elem.style.display = "none";
             document.body.appendChild(elem);
         } else if (config.window_id) {
+            // do a while loop to wait for the element to be available
+            // the timeout should be 9 * 500 ms
+            let count = 0;
+            while (!document.getElementById(config.window_id) && count < 9) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+                count++;
+            }
             elem = document.getElementById(config.window_id);
             if (!elem) {
                 throw new Error("Window element not found: " + config.window_id);
@@ -377,7 +390,18 @@ class Workspace {
         if (svc.run && config) {
             await svc.run({ data: config.data, config: config.config });
         }
+        this.windows.push({ id: config.window_id, name: config.name || config.src, service: svc });
         return svc;
+    }
+
+    async getWindow(config, context) {
+        if (typeof config === "string") {
+            return this.windows.find(w => w.name === config);
+        } else if (config.id) {
+            return this.windows.find(w => w.id === config.id);
+        } else if (config.name) {
+            return this.windows.find(w => w.name === config.name);
+        }
     }
 
     async loadPlugin(config, context) {

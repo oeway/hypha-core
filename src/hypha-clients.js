@@ -45,40 +45,39 @@ export async function setupHyphaClients(server) {
     const api = await hyphaWebsocketClient.connectToServer({ server, workspace: "ws-1", client_id: "client-1" })
     const uiDesigner = await api.createWindow({ src: "http://localhost:3000/react-ui.html", pos: "side" });
     
-    const report = await uiDesigner.renderApp(`
-        const { useState, useEffect } = React;
-        const App = () => {
-            const [count, setCount] = useState(0);
-            return (
-                <div>
-                    <p>Hello World!</p>
-                    <p>Count: {count}</p>
-                    <button onClick={() => setCount(count + 1)}>Increment</button>
-                </div>
-            );
-        };
-        export default App;
-    `, `
-    const { screen, waitFor } = testingLibraryDom;
-    const userEvent = testingLibraryUserEvent;
+    // const report = await uiDesigner.renderApp(`
+    //     const { useState, useEffect } = React;
+    //     const App = () => {
+    //         const [count, setCount] = useState(0);
+    //         return (
+    //             <div>
+    //                 <p>Hello World!</p>
+    //                 <p>Count: {count}</p>
+    //                 <button onClick={() => setCount(count + 1)}>Increment</button>
+    //             </div>
+    //         );
+    //     };
+    //     export default App;
+    // `, `
+    // const { screen, waitFor } = testingLibraryDom;
+    // const userEvent = testingLibraryUserEvent;
     
-    describe('App Component', () => {
-        it('renders hello world', () => {
-            screen.getByText(/hello world/i)
+    // describe('App Component', () => {
+    //     it('renders hello world', () => {
+    //         expect(screen.getByText(/hello world/i)).toBeInTheDocument();
             
-        });
+    //     });
 
-        it('increments count', async () => {
-            screen.getByText(/count: 0/i);
-            // click on the increment button
-            userEvent.click(screen.getByText(/increment/i));
-            // wait for the screen to update
-            waitFor(() => screen.getByText(/count: 1/i), { timeout: 1000 });
-        });
-    });
-    `);
-    console.log("test report:", report);
-    debugger
+    //     it('increments count', async () => {
+    //         screen.getByText(/count: 0/i);
+    //         // click on the increment button
+    //         userEvent.click(screen.getByText(/increment/i));
+    //         // wait for the screen to update
+    //         waitFor(() => screen.getByText(/count: 1/i), { timeout: 1000 });
+    //     });
+    // });
+    // `);
+    // console.log("test report:", report);
     
     let kaibuViewer = null;
     let currentScript = "";
@@ -92,9 +91,19 @@ export async function setupHyphaClients(server) {
             visibility: "public",
             require_context: false,
         },
-        get_state(){
+        async get_state(){
             return {
-                "Current Script": currentScript
+                "Current Script": await uiDesigner.getScript(),
+                "Tips for scripting": `
+                
+                - Always test your UI with the test script until it produces the expected behavior.
+                - You have access to a set of ImJoy api, for example, to display an image in interactive viewer, you can use the \`api.createWindow\` function.
+                e.g.
+                const viewer = await api.createWindow({ src: "https://kaibu.org/#/app", name: "Kaibu"})
+                await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
+                // note you cannot use jest to access the dom of the viewer, you need to manually check the viewer.
+                // to test the viewer, you can use \`await api.getWindow("Kaibu")\` to test if the viewer is created.
+                `
             };
         },
         get_schema() {
@@ -110,7 +119,7 @@ export async function setupHyphaClients(server) {
                         },
                         testScript: {
                             type: "string",
-                            description: "A jest test script, for example: `const {screen, waitFor} = testingLibraryDom; const userEvent = testingLibraryUserEvent; describe('App Component', () => { it('renders hello world', () => { screen.getByText(/hello world/i); }); });`",
+                            description: "A jest test script using testingLibrary (the component is already rendered, no need to call render() explicitly), for example: `const {screen, waitFor} = testingLibraryDom; const userEvent = testingLibraryUserEvent; describe('App Component', () => { it('renders hello world', () => { expect(screen.getByText(/hello world/i)).toBeInTheDocument(); }); });`",
                         },
                     },
                     required: ["script", "testScript"],
