@@ -43,7 +43,7 @@ api.export(ImJoyPlugin())
 export async function setupHyphaClients(server) {
 
     const api = await hyphaWebsocketClient.connectToServer({ server, workspace: "ws-1", client_id: "client-1" })
-    const uiDesigner = await api.createWindow({ src: "http://localhost:3000/react-ui.html", pos: "side" });
+    // const uiDesigner = await api.createWindow({ src: "http://localhost:3000/react-ui.html", pos: "side" });
     
     // const report = await uiDesigner.renderApp(`
     //     const { useState, useEffect } = React;
@@ -93,7 +93,7 @@ export async function setupHyphaClients(server) {
         },
         async get_state(){
             return {
-                "Current Script": await uiDesigner.getScript(),
+                // "Current Script": await uiDesigner.getScript(),
                 "Tips for scripting": `
                 
                 - Always test your UI with the test script until it produces the expected behavior.
@@ -186,4 +186,5 @@ export async function setupHyphaClients(server) {
     // const plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
     // await plugin.run();
     // console.log("web-worker plugin:", plugin)
+    return api;
 };

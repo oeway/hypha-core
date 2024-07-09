@@ -1,11 +1,10 @@
-// webpack.config.js
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const { EsbuildPlugin } = require("esbuild-loader");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
+const webpack = require("webpack");
 
-// Configuration for lib as ESM
 const libConfig = {
   name: 'core',
   entry: {
@@ -14,7 +13,6 @@ const libConfig = {
   output: {
     filename: "hypha-core.mjs",
     path: path.resolve(__dirname, "dist"),
-    // clean: true,
     library: {
       type: "module",
     },
@@ -25,6 +23,14 @@ const libConfig = {
   resolve: {
     extensions: [".js"],
     plugins: [],
+    fallback: {
+      "stream": require.resolve("stream-browserify"),
+      "util": require.resolve("util/"),
+      "path": require.resolve("path-browserify"),
+      "buffer": require.resolve("buffer/"),
+      "process": require.resolve("process/browser"),
+      "fs": false
+    },
   },
 };
 
@@ -34,7 +40,6 @@ const appConfig = {
   output: {
     filename: "[name].js",
     path: path.resolve(__dirname, "dist"),
-    // clean: true,
   },
   plugins: [
     new HtmlWebpackPlugin({
@@ -42,10 +47,26 @@ const appConfig = {
       template: path.resolve(__dirname, "public", "index.html"),
     }),
     new MiniCssExtractPlugin(),
+    new webpack.ProvidePlugin({
+      process: 'process/browser',
+      Buffer: ['buffer', 'Buffer'],
+    }),
+    new webpack.IgnorePlugin({
+      resourceRegExp: /^\.\/locale$/,
+      contextRegExp: /moment$/
+    }),
   ],
   resolve: {
     extensions: [".ts", ".js", ".jsx", ".tsx"],
     plugins: [new TsconfigPathsPlugin()],
+    fallback: {
+      "stream": require.resolve("stream-browserify"),
+      "util": require.resolve("util/"),
+      "path": require.resolve("path-browserify"),
+      "buffer": require.resolve("buffer/"),
+      "process": require.resolve("process/browser"),
+      "fs": false
+    },
   },
   module: {
     rules: [
@@ -92,6 +113,16 @@ const appConfig = {
       },
     ],
   },
+  ignoreWarnings: [
+    {
+      module: /mocha/,
+      message: /the request of a dependency is an expression/
+    },
+    {
+      module: /@babel[\/\\]standalone/,
+      message: /the request of a dependency is an expression/
+    },
+  ],
   optimization: {
     minimizer: [
       new EsbuildPlugin({
@@ -102,7 +133,6 @@ const appConfig = {
   },
   devServer: {
     port: 3000,
-    // open: true,
   },
 };
 

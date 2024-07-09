@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { setupHyphaClients } from "./hypha-clients";
-import { HyphaServer } from "./hypha-core";
-import "./tailwind.css";
+import { HyphaServer, connectToServer } from "./hypha-core";
+import ReactUI from "./components/ReactUI";
 
-const App = () => {
+const MainApp = () => {
   const containerRef = useRef(null);
   const [mainIframe, setMainIframe] = useState(null);
   const [sideIframes, setSideIframes] = useState([]);
@@ -21,12 +21,17 @@ const App = () => {
       };
       if (config.pos === "main") {
         setMainIframe(iframe);
-      } else{
+      } else {
         setSideIframes((prev) => [...prev, iframe]);
         setActiveSideIframe(iframe.id);
       }
     });
-
+    
+    connectToServer({ server: hyphaServer, workspace: "ws-1", client_id: "client" }).then(api => {
+      const iframe = { src: "react-ui", id: "react-ui", name: "React UI", api};
+      setSideIframes((prev) => [...prev, iframe]);
+      setActiveSideIframe(iframe.id);
+    });
     setupHyphaClients(hyphaServer);
   }, []);
 
@@ -96,7 +101,9 @@ const App = () => {
             id={mainIframe.id}
           />
         )}
-        {sideIframes.length > 0 && (
+        
+
+        {(
           <>
             <div
               className="w-1 bg-gray-400 cursor-col-resize"
@@ -104,6 +111,7 @@ const App = () => {
             />
             <div className="flex-grow relative h-full">
               {sideIframes.map((iframe) => (
+                iframe.src === "react-ui"? (iframe.api && <ReactUI key={iframe.id} api={iframe.api} />):
                 <iframe
                   key={iframe.id}
                   src={iframe.src}
@@ -111,6 +119,7 @@ const App = () => {
                   id={iframe.id}
                 />
               ))}
+              
             </div>
           </>
         )}
@@ -126,4 +135,4 @@ const App = () => {
   );
 };
 
-export default App;
+export default MainApp;
