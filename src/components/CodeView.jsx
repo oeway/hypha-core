@@ -15,7 +15,7 @@ export function CodeView ({ script, testScript }) {
         <div className="justify-center h-screen bg-gray-900 text-white p-3 w-full max-w-screen-lg mx-auto">
             <h1 className="text-lg font-bold mb-2">Script</h1>
             <Editor
-                height="68vh"
+                height="calc(68vh - 150px)"
                 theme="vs-dark"
                 defaultLanguage="javascript"
                 defaultValue={script}
