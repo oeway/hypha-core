@@ -13,8 +13,10 @@ import { FloatingSwitch } from "./FloatingSwitch";
 import { CodeView } from "./CodeView";
 import { ErrorDisplay } from "./ErrorDisplay";
 import { expect } from "chai";
+import HyphaContext from "../HyphaContext";
 
 mocha.setup('bdd');
+mocha.cleanReferencesAfterRun(false);
 
 // Extend Chai's expect with Testing Library's matchers
 Object.keys(matchers).forEach((key) => {
@@ -105,7 +107,6 @@ async function handleError(error, sMap, originalScript) {
     return { errorMessage, errorContext };
 }
 
-
 class ErrorBoundary extends React.Component {
     constructor(props) {
         super(props);
@@ -131,11 +132,11 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const Main = ({ Component, script, sMap, setError, setDone }) => {
+const Main = ({ Component, script, testScript, sMap, setError, setDone }) => {
     const [mode, setMode] = useState("app");
     useEffect(() => {
         setDone && setDone();
-    }, [Component, mode, script, setDone]);
+    }, [Component, script, setDone]);
 
     return (
         <>
@@ -147,19 +148,53 @@ const Main = ({ Component, script, sMap, setError, setDone }) => {
                             <Component />
                         </StrictMode>
                     </div>
-                ) : <CodeView script={script} />}
+                ) : <CodeView script={script} testScript={testScript}/>}
             </ErrorBoundary>
         </>
     );
 };
 
 
-const ReactUI = ({ api }) => {
-    const [script, setScript] = useState("");
+function executeCodeInContext(transformedScript, React, api) {
+
+    // Create a new isolated context
+    const module = { exports: {} };
+    const context = {
+        module,
+        exports: module.exports,
+        React,
+        api,
+        global: {},
+    };
+
+    // Define the script execution function
+    const script = new Function(
+        'module',
+        'exports',
+        'React',
+        'api',
+        'global',
+        `${transformedScript}`
+    );
+
+    // Execute the script in the new context
+    script(context.module, context.module.exports, context.React, context.api, context.global);
+
+    // Extract and return the component
+    const Component = context.module.exports.default;
+    if (!Component) {
+        throw new Error('Script must export a default component');
+    }
+    return Component;
+}
+
+export default function ReactUI({onReady}) {
+    let currentScript;
     const [component, setComponent] = useState(null);
     const [error, setError] = useState(null);
+    const { api } = React.useContext(HyphaContext);
 
-    async function testApp(testScript) {
+    function testApp(testScript) {
         try {
             const transformedTestScript = Babel.transform(testScript, {
                 presets: ['react'],
@@ -180,6 +215,7 @@ const ReactUI = ({ api }) => {
                         });
                         runner.on('fail', function (test, err) {
                             results.push(`FAIL: ${test.fullTitle()} - ${err.message}`);
+                            reject(new Error(`Test failed: ${test.fullTitle()} - ${err.message}`));
                         });
                         runner.on('end', function () {
                             const report = results.join('\n');
@@ -198,14 +234,13 @@ const ReactUI = ({ api }) => {
                 mocha.run();
             });
         } catch (testError) {
-            console.error("Failed to execute the test script:", testError.message);
             return Promise.reject(testError);
         }
     }
 
     async function renderApp(script, testScript) {
-        setScript(script);
-        let func, sMap, module, formattedScript;
+        currentScript = script;
+        let sMap, formattedScript, transformedScript;
         try {
             const transformed = Babel.transform(script, {
                 presets: ['react'],
@@ -214,11 +249,8 @@ const ReactUI = ({ api }) => {
                 filename: 'userScript.js'
             });
 
-            const transformedScript = transformed.code;
+            transformedScript = transformed.code;
             sMap = transformed.map;
-
-            module = { exports: {} };
-            func = new Function('module', 'exports', 'React', 'api', transformedScript);
             formattedScript = prettier.format(script, {
                 parser: "babel",
                 plugins: [parserBabel]
@@ -231,15 +263,18 @@ const ReactUI = ({ api }) => {
         }
         try {
             await new Promise((resolve, reject) => {
-                const setError = (error) => {
+                try{
+                    const Component = executeCodeInContext(transformedScript, React, api)
+                    if (Component){
+                        setComponent(<Main Component={Component} script={formattedScript} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} />);
+                    }
+                    else {
+                        reject(error);
+                    }
+                }
+                catch (error){
                     reject(error);
-                };
-                const setDone = () => {
-                    resolve();
-                };
-                func(module, module.exports, React, api);
-                const Component = module.exports.default;
-                setComponent(<Main Component={Component} script={formattedScript} sMap={sMap} setError={setError} setDone={setDone} />);
+                } 
             });
         } catch (executionError) {
             console.error("Failed to execute the script:", executionError.message);
@@ -261,21 +296,22 @@ const ReactUI = ({ api }) => {
 
     useEffect(() => {
         renderApp(defaultScript, defaultTestScript).then(console.log).catch(console.error);
-        api.export({
+        api && api.registerService({
+            id: 'react-ui',
+            name: 'React UI',
             setup() {
                 console.log("Hypha client is ready", api)
             },
             getScript() {
-                return script || '';
+                return currentScript || '';
             },
             renderApp,
+        }).then((svc) => {
+            onReady && onReady(svc);
         });
-    }, []);
+    }, [api]);
 
     return (
         error ? <ErrorDisplay error={error.message} context={error.context} /> : component
     );
 };
-
-
-export default ReactUI;

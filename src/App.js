@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { setupHyphaClients } from "./hypha-clients";
 import { HyphaServer, connectToServer } from "./hypha-core";
 import ReactUI from "./components/ReactUI";
+import HyphaContext from "./HyphaContext";
 
 const MainApp = () => {
   const containerRef = useRef(null);
@@ -10,6 +11,9 @@ const MainApp = () => {
   const [activeSideIframe, setActiveSideIframe] = useState(null);
   const [mainWidth, setMainWidth] = useState(50); // Percentage of the main window width
   const [isDragging, setIsDragging] = useState(false);
+  const [hyphaServer, setHyphaServer] = useState(null);
+  const [hyphaApi, setHyphaApi] = useState(null);
+  const [reactUI, setReactUI] = useState(null);
 
   useEffect(() => {
     const hyphaServer = new HyphaServer();
@@ -27,13 +31,21 @@ const MainApp = () => {
       }
     });
     
-    connectToServer({ server: hyphaServer, workspace: "ws-1", client_id: "client" }).then(api => {
-      const iframe = { src: "react-ui", id: "react-ui", name: "React UI", api};
-      setSideIframes((prev) => [...prev, iframe]);
-      setActiveSideIframe(iframe.id);
+    const iframe = { src: "react-ui", id: "react-ui", name: "React UI"};
+    setSideIframes((prev) => [...prev, iframe]);
+    setActiveSideIframe(iframe.id);
+    setHyphaServer(hyphaServer);
+    connectToServer({ server: hyphaServer, workspace: "default", client_id: "default-client" }).then(api => {
+      // api will be set in the hypha context
+      setHyphaApi(api);
     });
-    setupHyphaClients(hyphaServer);
   }, []);
+
+  useEffect(() => {
+    if (reactUI && hyphaApi) {
+      setupHyphaClients(hyphaApi, reactUI);
+    }
+  }, [reactUI, hyphaApi]);
 
   const handleMouseDown = (e) => {
     e.preventDefault();
@@ -57,7 +69,8 @@ const MainApp = () => {
   };
 
   return (
-    <div className="w-screen h-screen flex flex-col">
+    <HyphaContext.Provider value={{server: hyphaServer, api: hyphaApi}}>
+      <div className="w-screen h-screen flex flex-col">
       <nav className="bg-gray-800 text-white flex items-center justify-between p-4">
         <div className="flex items-center">
           <img
@@ -111,7 +124,7 @@ const MainApp = () => {
             />
             <div className="flex-grow relative h-full">
               {sideIframes.map((iframe) => (
-                iframe.src === "react-ui"? (iframe.api && <ReactUI key={iframe.id} api={iframe.api} />):
+                iframe.src === "react-ui"? (<ReactUI key={iframe.id} onReady={setReactUI}/>):
                 <iframe
                   key={iframe.id}
                   src={iframe.src}
@@ -132,6 +145,7 @@ const MainApp = () => {
         />
       )}
     </div>
+    </HyphaContext.Provider>
   );
 };
 

@@ -1,19 +1,38 @@
-import React, { useEffect } from 'react';
-import hljs from "highlight.js";
-import "highlight.js/styles/default.css";
+import React, {useRef} from 'react';
 
-export function CodeView ({ script }) {
-    useEffect(() => {
-        hljs.highlightAll();
-    }, [script]);
+import Editor from '@monaco-editor/react';
 
+export function CodeView ({ script, testScript }) {
+    const editorRef = useRef(null);
+    const testEditorRef = useRef(null);
+    function handleEditorDidMount(editor, monaco) {
+        editorRef.current = editor;
+    }
+    function handleTestEditorDidMount(editor, monaco) {
+        testEditorRef.current = editor;
+    }
     return (
-        <div className="flex items-center justify-center h-screen bg-gray-900 text-white p-0 w-full max-w-screen-lg mx-auto">
-            <div className="w-full p-4 bg-gray-800 rounded-lg shadow-lg overflow-x-auto">
-                <pre className="w-full h-full">
-                    <code className="whitespace-pre-wrap hljs language-javascript">{script}</code>
-                </pre>
-            </div>
+        <div className="justify-center h-screen bg-gray-900 text-white p-3 w-full max-w-screen-lg mx-auto">
+            <h1 className="text-lg font-bold mb-2">Script</h1>
+            <Editor
+                height="68vh"
+                theme="vs-dark"
+                defaultLanguage="javascript"
+                defaultValue={script}
+                options={{readOnly: true}}
+                // onChange={()=> editorRef.current && testEditorRef.current && onCodeChange(editorRef.current.getValue(), testEditorRef.current.getValue())} // Pass the function to handle changes
+                onMount={handleEditorDidMount}
+            />
+            <h1 className="text-lg font-bold mb-2">Test Script</h1>
+            <Editor
+                height="32vh"
+                theme="vs-dark"
+                defaultLanguage="javascript"
+                defaultValue={testScript}
+                options={{readOnly: true}}
+                // onChange={()=> editorRef.current && testEditorRef.current && onCodeChange(editorRef.current.getValue(), testEditorRef.current.getValue())} // Pass the function to handle changes
+                onMount={handleTestEditorDidMount}
+            />
         </div>
     );
 };

@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.24.7",
+    "@monaco-editor/react": "^4.6.0",
     "@msgpack/msgpack": "^3.0.0-beta2",
     "@testing-library/dom": "^8.13.0",
     "@testing-library/jest-dom": "^5.16.5",
@@ -35,7 +36,6 @@
     "autoprefixer": "^10.4.19",
     "buffer": "^6.0.3",
     "chai": "^4.3.4",
-    "highlight.js": "^11.5.0",
     "imjoy-rpc": "^0.5.56",
     "mocha": "^8.4.0",
     "mock-socket": "^9.3.1",

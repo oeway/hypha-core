@@ -40,45 +40,9 @@ class ImJoyPlugin():
 api.export(ImJoyPlugin())
 </script>
 `
-export async function setupHyphaClients(server) {
+export async function setupHyphaClients(api, reactUI) {
 
-    const api = await hyphaWebsocketClient.connectToServer({ server, workspace: "ws-1", client_id: "client-1" })
-    // const uiDesigner = await api.createWindow({ src: "http://localhost:3000/react-ui.html", pos: "side" });
-    
-    // const report = await uiDesigner.renderApp(`
-    //     const { useState, useEffect } = React;
-    //     const App = () => {
-    //         const [count, setCount] = useState(0);
-    //         return (
-    //             <div>
-    //                 <p>Hello World!</p>
-    //                 <p>Count: {count}</p>
-    //                 <button onClick={() => setCount(count + 1)}>Increment</button>
-    //             </div>
-    //         );
-    //     };
-    //     export default App;
-    // `, `
-    // const { screen, waitFor } = testingLibraryDom;
-    // const userEvent = testingLibraryUserEvent;
-    
-    // describe('App Component', () => {
-    //     it('renders hello world', () => {
-    //         expect(screen.getByText(/hello world/i)).toBeInTheDocument();
-            
-    //     });
-
-    //     it('increments count', async () => {
-    //         screen.getByText(/count: 0/i);
-    //         // click on the increment button
-    //         userEvent.click(screen.getByText(/increment/i));
-    //         // wait for the screen to update
-    //         waitFor(() => screen.getByText(/count: 1/i), { timeout: 1000 });
-    //     });
-    // });
-    // `);
-    // console.log("test report:", report);
-    
+    const uiDesigner = await api.getService(reactUI.id)
     let kaibuViewer = null;
     let currentScript = "";
     const chatbotExtension = {
@@ -93,7 +57,7 @@ export async function setupHyphaClients(server) {
         },
         async get_state(){
             return {
-                // "Current Script": await uiDesigner.getScript(),
+                "Current Script": await uiDesigner.getScript(),
                 "Tips for scripting": `
                 
                 - Always test your UI with the test script until it produces the expected behavior.

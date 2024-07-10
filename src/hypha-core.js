@@ -73,6 +73,7 @@ const defaultServices = {
         const cid = workspaceObj.id + "/" + info.id;
         info.id = cid;
         info.workspaceObj = workspaceObj;
+        console.log('update_client_info', cid, info)
         Workspace.clients[cid] = Object.assign(Workspace.clients[cid] || {}, info);
         await workspaceObj.eventBus.emit("client_info_updated", info);
     },
@@ -144,6 +145,16 @@ const defaultServices = {
         const workspaceId = context.to.split('/')[0];
         const workspaceObj = Workspace.workspaces[workspaceId];
         return workspaceObj.getWindow(config, context);
+    },
+    "registerService": async (service, context) => {
+        const workspaceId = context.to.split('/')[0];
+        const workspaceObj = Workspace.workspaces[workspaceId];
+        return workspaceObj.registerService(service, context);
+    },
+    "register_service": async (service, context) => {
+        const workspaceId = context.to.split('/')[0];
+        const workspaceObj = Workspace.workspaces[workspaceId];
+        return workspaceObj.registerService(service, context);
     },
 };
 
@@ -279,6 +290,7 @@ class Workspace {
     async getServiceById(serviceId, clientId = "*", workspace = "*") {
         for (const client of Object.values(Workspace.clients)) {
             const ws = client.workspaceObj;
+            if(!client.services) continue;
             for (const service of client.services) {
                 const [ci, si] = service.id.split(":");
 
@@ -305,6 +317,44 @@ class Workspace {
         }
 
         throw new Error(`Service with id ${serviceId} not found`);
+    }
+
+    // Python code:
+    // async def register_service(self, service, context: Optional[dict] = None, **kwargs):
+    //     """Register a service"""
+    //     user_info = UserInfo.model_validate(context["user"])
+    //     source_workspace = context["from"].split("/")[0]
+    //     assert source_workspace == self._workspace, (
+    //         f"Service must be registered in the same workspace: "
+    //         f"{source_workspace} != {self._workspace} (current workspace)."
+    //     )
+
+    //     if not await self.check_permission(user_info):
+    //         raise Exception(f"Permission denied for workspace {self._workspace}.")
+    //     logger.info("Registering service %s to %s", service.id, self._workspace)
+    //     rpc = await self.get_rpc()
+    //     sv = await rpc.get_remote_service(context["from"] + ":built-in")
+    //     service["config"] = service.get("config", {})
+    //     service["config"]["workspace"] = self._workspace
+    //     service = await sv.register_service(service, **kwargs)
+    //     assert "/" not in service["id"], "Service id must not contain '/'"
+    //     service["id"] = self._workspace + "/" + service["id"]
+    //     return service
+
+    async registerService(service, context) {
+        const workspaceId = context.to.split('/')[0];
+        const workspaceObj = Workspace.workspaces[workspaceId];
+        console.log("Registering service:", service);
+        if(!context["from"].includes("/")) {
+            context["from"] = workspaceId + "/" + context["from"];
+        }
+        const builtinSvc = await workspaceObj.rpc.get_remote_service(context["from"] + ":built-in");
+        service["config"] = service["config"] || {};
+        service["config"]["workspace"] = workspaceObj.id;
+        const svc = await builtinSvc.register_service(service);
+        assert(!svc["id"].includes("/"), "Service id must not contain '/'");
+        svc["id"] = workspaceObj.id + "/" + svc["id"];
+        return svc;
     }
 
     patchServiceConfig(workspace, serviceApi) {
