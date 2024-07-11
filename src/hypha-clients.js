@@ -43,6 +43,8 @@ api.export(ImJoyPlugin())
 export async function setupHyphaClients(api, reactUI) {
 
     const uiDesigner = await api.getService(reactUI.id)
+    // await uiDesigner.renderApp(`const {useState, useEffect} = React; const App = () => { return <div>Hello World!</div>; }; export default App;`);
+
     let kaibuViewer = null;
     let currentScript = "";
     const chatbotExtension = {
@@ -59,7 +61,7 @@ export async function setupHyphaClients(api, reactUI) {
             return {
                 "Current Script": await uiDesigner.getScript(),
                 "Tips for scripting": `
-                
+                - Keep in mind the User do not know coding, so instead telling the user about the code issues, try to fix it.
                 - Always test your UI with the test script until it produces the expected behavior.
                 - You have access to a set of ImJoy api, for example, to display an image in interactive viewer, you can use the \`api.createWindow\` function.
                 e.g.
@@ -83,10 +85,10 @@ export async function setupHyphaClients(api, reactUI) {
                         },
                         testScript: {
                             type: "string",
-                            description: "A jest test script using testingLibrary (the component is already rendered, no need to call render() explicitly), for example: `const {screen, waitFor} = testingLibraryDom; const userEvent = testingLibraryUserEvent; describe('App Component', () => { it('renders hello world', () => { expect(screen.getByText(/hello world/i)).toBeInTheDocument(); }); });`",
+                            description: "A jest test script using testingLibrary (the component is already rendered, no need to call render() explicitly, but you need to waitFor event to be handled by react), for example: `const {screen, waitFor} = testingLibraryDom; const userEvent = testingLibraryUserEvent; describe('App Component', () => { it('renders hello world', () => { expect(screen.getByText(/hello world/i)).toBeInTheDocument(); }); });`",
                         },
                     },
-                    required: ["script", "testScript"],
+                    required: ["script"],
                 },
             };
         },

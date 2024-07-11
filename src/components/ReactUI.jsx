@@ -118,7 +118,7 @@ class ErrorBoundary extends React.Component {
     }
 
     componentDidCatch(error) {
-        handleError(error, this.props.sourceMap, this.props.originalScript).then(({ errorMessage, errorContext }) => {
+        handleError(error, this.props.sourceMap, this.props.script).then(({ errorMessage, errorContext }) => {
             this.props.setError(new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext));
         });
     }
@@ -136,12 +136,12 @@ const Main = ({ Component, script, testScript, sMap, setError, setDone }) => {
     const [mode, setMode] = useState("app");
     useEffect(() => {
         setDone && setDone();
-    }, [Component, script, setDone]);
+    }, [Component, setDone]);
 
     return (
         <>
             <FloatingSwitch mode={mode} setMode={setMode} />
-            <ErrorBoundary setError={setError} sourceMap={sMap} originalScript={script}>
+            <ErrorBoundary setError={setError} sourceMap={sMap} script={script}>
                 {mode === "app" ? (
                     <div className="w-full h-full  p-0 overflow-x-auto">
                         <StrictMode>
@@ -155,33 +155,13 @@ const Main = ({ Component, script, testScript, sMap, setError, setDone }) => {
 };
 
 
-function executeCodeInContext(transformedScript, React, api) {
-
-    // Create a new isolated context
-    const module = { exports: {} };
-    const context = {
-        module,
-        exports: module.exports,
-        React,
-        api,
-        global: {},
-    };
-
-    // Define the script execution function
-    const script = new Function(
-        'module',
-        'exports',
-        'React',
-        'api',
-        'global',
-        `${transformedScript}`
-    );
-
-    // Execute the script in the new context
-    script(context.module, context.module.exports, context.React, context.api, context.global);
-
-    // Extract and return the component
-    const Component = context.module.exports.default;
+async function executeCodeInContext(transformedScript, React, api) {
+    let exports = {};
+    // Execute the transformed script
+    new Function('exports', 'React', 'api', transformedScript)(exports, React, api);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Assuming the transformed script assigns the component to global.userScript
+    let Component = exports.default;
     if (!Component) {
         throw new Error('Script must export a default component');
     }
@@ -198,7 +178,8 @@ export default function ReactUI({onReady}) {
         try {
             const transformedTestScript = Babel.transform(testScript, {
                 presets: ['react'],
-                plugins: ['transform-modules-umd']
+                plugins: ['transform-modules-umd'],
+                filename: 'testScript.js'
             }).code;
 
             const testFunc = new Function('React', 'testingLibraryDom', 'testingLibraryUserEvent', 'expect', 'describe', 'it', 'api', transformedTestScript);
@@ -219,6 +200,7 @@ export default function ReactUI({onReady}) {
                         });
                         runner.on('end', function () {
                             const report = results.join('\n');
+                            console.log(`Test report:\n${report}`);
                             resolve(report);
                         });
                     }
@@ -239,8 +221,20 @@ export default function ReactUI({onReady}) {
     }
 
     async function renderApp(script, testScript) {
+        try{
+            script = prettier.format(script, {
+                parser: "babel",
+                plugins: [parserBabel]
+            });
+            testScript = prettier.format(testScript, {
+                parser: "babel",
+                plugins: [parserBabel]
+            });
+        }
+        catch(e){
+            console.warning("Failed to format the script:", e.message);
+        }
         currentScript = script;
-        let sMap, formattedScript, transformedScript;
         try {
             const transformed = Babel.transform(script, {
                 presets: ['react'],
@@ -248,47 +242,27 @@ export default function ReactUI({onReady}) {
                 sourceMaps: true,
                 filename: 'userScript.js'
             });
-
-            transformedScript = transformed.code;
-            sMap = transformed.map;
-            formattedScript = prettier.format(script, {
-                parser: "babel",
-                plugins: [parserBabel]
-            });
+            const transformedScript = transformed.code;
+            const sMap = transformed.map;
+            const Component = await executeCodeInContext(transformedScript, React, api);
+            await new Promise((resolve, reject) => setComponent(<Main Component={Component} script={script} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} />));
         } catch (transformationError) {
             console.error("Failed to transform the script:", transformationError.message);
             const { errorMessage, errorContext } = await handleError(transformationError, null, script);
             setError({ message: errorMessage, context: errorContext });
             throw new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext);
         }
-        try {
-            await new Promise((resolve, reject) => {
-                try{
-                    const Component = executeCodeInContext(transformedScript, React, api)
-                    if (Component){
-                        setComponent(<Main Component={Component} script={formattedScript} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} />);
-                    }
-                    else {
-                        reject(error);
-                    }
-                }
-                catch (error){
-                    reject(error);
-                } 
-            });
-        } catch (executionError) {
-            console.error("Failed to execute the script:", executionError.message);
-            const { errorMessage, errorContext } = await handleError(executionError, sMap, script);
-            setError({ message: errorMessage, context: errorContext });
-            throw new Error('Script execution failed:\n' + errorMessage + '\n' + errorContext);
-        }
 
         try {
-            return testScript && await testApp(testScript);
+            if(testScript){
+                return await testApp(testScript);
+            }
+            else
+                return "App rendered successfully (but no test script provided)";
         }
         catch (testError) {
             console.error("Failed to execute the test script:", testError.message);
-            const { errorMessage, errorContext } = await handleError(testError, sMap, testScript);
+            const { errorMessage, errorContext } = await handleError(testError, null, testScript);
             setError({ message: errorMessage, context: errorContext });
             throw new Error('Test Script failed:\n' + errorMessage + '\n' + errorContext);
         }
@@ -312,6 +286,9 @@ export default function ReactUI({onReady}) {
     }, [api]);
 
     return (
-        error ? <ErrorDisplay error={error.message} context={error.context} /> : component
+        <>
+        {error && <ErrorDisplay error={error.message} context={error.context} />}
+        {component && component}
+        </>
     );
 };

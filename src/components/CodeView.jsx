@@ -1,8 +1,8 @@
-import React, {useRef} from 'react';
+import React, { useRef } from 'react';
 
 import Editor from '@monaco-editor/react';
 
-export function CodeView ({ script, testScript }) {
+export function CodeView({ script, testScript }) {
     const editorRef = useRef(null);
     const testEditorRef = useRef(null);
     function handleEditorDidMount(editor, monaco) {
@@ -19,20 +19,28 @@ export function CodeView ({ script, testScript }) {
                 theme="vs-dark"
                 defaultLanguage="javascript"
                 defaultValue={script}
-                options={{readOnly: true}}
+                options={{ readOnly: true }}
                 // onChange={()=> editorRef.current && testEditorRef.current && onCodeChange(editorRef.current.getValue(), testEditorRef.current.getValue())} // Pass the function to handle changes
                 onMount={handleEditorDidMount}
             />
-            <h1 className="text-lg font-bold mb-2">Test Script</h1>
-            <Editor
-                height="32vh"
-                theme="vs-dark"
-                defaultLanguage="javascript"
-                defaultValue={testScript}
-                options={{readOnly: true}}
-                // onChange={()=> editorRef.current && testEditorRef.current && onCodeChange(editorRef.current.getValue(), testEditorRef.current.getValue())} // Pass the function to handle changes
-                onMount={handleTestEditorDidMount}
-            />
+
+
+            {testScript &&
+                <>
+                    <h1 className="text-lg font-bold mb-2">Test Script</h1>
+                    <Editor
+                        height="32vh"
+                        theme="vs-dark"
+                        defaultLanguage="javascript"
+                        defaultValue={testScript}
+                        options={{ readOnly: true }}
+                        // onChange={()=> editorRef.current && testEditorRef.current && onCodeChange(editorRef.current.getValue(), testEditorRef.current.getValue())} // Pass the function to handle changes
+                        onMount={handleTestEditorDidMount}
+                    />
+                </>
+            }
+
+
         </div>
     );
 };
