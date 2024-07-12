@@ -132,11 +132,20 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const Main = ({ Component, script, testScript, sMap, setError, setDone, onRun }) => {
+const Main = ({ Component, script, testScript, sMap, setError, setDone, onRenderApp }) => {
     const [mode, setMode] = useState("app");
+    const [currentScript, setCurrentScript] = useState(script);
+    const [currentTestScript, setCurrentTestScript] = useState(testScript);
+
     useEffect(() => {
         setDone && setDone();
     }, [Component, setDone]);
+
+    useEffect(() => {
+        if(mode === "app" && onRenderApp){
+            onRenderApp(currentScript, currentTestScript);
+        }
+    }, [mode, currentScript, currentTestScript, onRenderApp]);
 
     return (
         <>
@@ -148,7 +157,10 @@ const Main = ({ Component, script, testScript, sMap, setError, setDone, onRun })
                             <Component />
                         </StrictMode>
                     </div>
-                ) : <CodeView script={script} testScript={testScript} onRun={onRun}/>}
+                ) : <CodeView script={script} testScript={testScript} onCodeChange={(newScript, newTestScript)=>{
+                    setCurrentScript(newScript);
+                    setCurrentTestScript(newTestScript);
+                }}/>}
             </ErrorBoundary>
         </>
     );
@@ -245,7 +257,7 @@ export default function ReactUI({onReady}) {
             const transformedScript = transformed.code;
             const sMap = transformed.map;
             const Component = await executeCodeInContext(transformedScript, React, api);
-            await new Promise((resolve, reject) => setComponent(<Main Component={Component} script={script} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} onRun={renderApp}/>));
+            await new Promise((resolve, reject) => setComponent(<Main Component={Component} script={script} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} onRenderApp={renderApp}/>));
         } catch (transformationError) {
             console.error("Failed to transform the script:", transformationError.message);
             const { errorMessage, errorContext } = await handleError(transformationError, null, script);
