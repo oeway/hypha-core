@@ -132,7 +132,7 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-const Main = ({ Component, script, testScript, sMap, setError, setDone }) => {
+const Main = ({ Component, script, testScript, sMap, setError, setDone, onRun }) => {
     const [mode, setMode] = useState("app");
     useEffect(() => {
         setDone && setDone();
@@ -148,7 +148,7 @@ const Main = ({ Component, script, testScript, sMap, setError, setDone }) => {
                             <Component />
                         </StrictMode>
                     </div>
-                ) : <CodeView script={script} testScript={testScript}/>}
+                ) : <CodeView script={script} testScript={testScript} onRun={onRun}/>}
             </ErrorBoundary>
         </>
     );
@@ -245,7 +245,7 @@ export default function ReactUI({onReady}) {
             const transformedScript = transformed.code;
             const sMap = transformed.map;
             const Component = await executeCodeInContext(transformedScript, React, api);
-            await new Promise((resolve, reject) => setComponent(<Main Component={Component} script={script} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} />));
+            await new Promise((resolve, reject) => setComponent(<Main Component={Component} script={script} sMap={sMap} testScript={testScript} setError={reject} setDone={resolve} onRun={renderApp}/>));
         } catch (transformationError) {
             console.error("Failed to transform the script:", transformationError.message);
             const { errorMessage, errorContext } = await handleError(transformationError, null, script);
