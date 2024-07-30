@@ -100,7 +100,7 @@ export async function setupHyphaClients(api, reactUI) {
             }
         }
     }
-    const chatbot = await api.createWindow({ src: `http://127.0.0.1:9527/chat?assistant=Skyler`, pos: "main"})
+    const chatbot = await api.createWindow({ src: `https://bioimage.io/chat?assistant=Skyler`, pos: "main"})
     await chatbot.registerExtension(chatbotExtension);
     // const viewer = await api.createWindow({ src: "https://kaibu.org/#/app", pos: "main"})
     // await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
