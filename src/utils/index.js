@@ -1,63 +1,89 @@
 import { encode as msgpack_packb, Decoder } from "@msgpack/msgpack";
 import { parseComponent } from "./pluginParser";
+
+export function toCamelCase(str) {
+    // Check if the string is already in camelCase
+    if (!str.includes("_")) {
+      return str;
+    }
+    // Convert from snake_case to camelCase
+    return str.replace(/_./g, (match) => match[1].toUpperCase());
+}
+
 export class MessageEmitter {
     constructor(debug) {
-        this._event_handlers = {};
-        this._once_handlers = {};
-        this._debug = debug;
+      this._event_handlers = {};
+      this._once_handlers = {};
+      this._debug = debug;
     }
     emit() {
-        throw new Error("emit is not implemented");
+      throw new Error("emit is not implemented");
     }
     on(event, handler) {
-        if (!this._event_handlers[event]) {
-            this._event_handlers[event] = [];
-        }
-        this._event_handlers[event].push(handler);
+      if (!this._event_handlers[event]) {
+        this._event_handlers[event] = [];
+      }
+      this._event_handlers[event].push(handler);
     }
     once(event, handler) {
-        handler.___event_run_once = true;
-        this.on(event, handler);
+      handler.___event_run_once = true;
+      this.on(event, handler);
     }
     off(event, handler) {
-        if (!event && !handler) {
-            // remove all events handlers
-            this._event_handlers = {};
-        } else if (event && !handler) {
-            // remove all hanlders for the event
-            if (this._event_handlers[event]) this._event_handlers[event] = [];
-        } else {
-            // remove a specific handler
-            if (this._event_handlers[event]) {
-                const idx = this._event_handlers[event].indexOf(handler);
-                if (idx >= 0) {
-                    this._event_handlers[event].splice(idx, 1);
-                }
-            }
+      if (!event && !handler) {
+        // remove all events handlers
+        this._event_handlers = {};
+      } else if (event && !handler) {
+        // remove all hanlders for the event
+        if (this._event_handlers[event]) this._event_handlers[event] = [];
+      } else {
+        // remove a specific handler
+        if (this._event_handlers[event]) {
+          const idx = this._event_handlers[event].indexOf(handler);
+          if (idx >= 0) {
+            this._event_handlers[event].splice(idx, 1);
+          }
         }
+      }
     }
     _fire(event, data) {
-        if (this._event_handlers[event]) {
-            var i = this._event_handlers[event].length;
-            while (i--) {
-                const handler = this._event_handlers[event][i];
-                try {
-                    handler(data);
-                } catch (e) {
-                    console.error(e);
-                } finally {
-                    if (handler.___event_run_once) {
-                        this._event_handlers[event].splice(i, 1);
-                    }
-                }
+      if (this._event_handlers[event]) {
+        var i = this._event_handlers[event].length;
+        while (i--) {
+          const handler = this._event_handlers[event][i];
+          try {
+            handler(data);
+          } catch (e) {
+            console.error(e);
+          } finally {
+            if (handler.___event_run_once) {
+              this._event_handlers[event].splice(i, 1);
             }
-        } else {
-            if (this._debug) {
-                console.warn("unhandled event", event, data);
-            }
+          }
         }
+      } else {
+        if (this._debug) {
+          console.warn("unhandled event", event, data);
+        }
+      }
     }
-}
+  
+    waitFor(event, timeout) {
+      return new Promise((resolve, reject) => {
+        const handler = (data) => {
+          clearTimeout(timer);
+          resolve(data);
+        };
+        this.once(event, handler);
+        const timer = setTimeout(() => {
+          this.off(event, handler);
+          reject(new Error("Timeout"));
+        }, timeout);
+      });
+    }
+  }
+  
+
 export function randId() {
     return (
         Math.random()
@@ -74,21 +100,26 @@ export function assert(condition, message) {
 
 
 export class WebsocketRPCConnection {
-    constructor(clients, clientId, workspace, userInfo, timeout = 60) {
+    constructor(eventBus, clients, clientId, workspace, managerId, timeout = 60) {
         this._clients = clients;
         this._clientId = clientId;
         this._handle_message = null;
+        this._handle_connected = null;
+        this._handle_disconnected = null;
         this._reconnection_token = null;
         this._timeout = timeout * 1000;
         this.workspace = workspace;
-        this.userInfo = userInfo;
+        this.connection_info = null;
+        this.manager_id = managerId;
+        this.eventBus = eventBus;
     }
 
-    register_socket(websocket) {
-        websocket.on('message', data => {
+    mount(config) {
+        assert(config.id && config.workspace && config.websocket && config.user_info, "Invalid client config");
+        config.websocket.on("message", (data)=>{
             const decoder = new Decoder();
             const unpacker = decoder.decodeMulti(data);
-
+    
             const { value: message } = unpacker.next();
             const targetId = message.to.includes('/') ? message.to.split('/')[1] : message.to;
             if (targetId === this._clientId) {
@@ -99,9 +130,14 @@ export class WebsocketRPCConnection {
         });
     }
 
-    set_reconnection_token(token) {
-        this._reconnection_token = token;
+    on_connected(handler) {
+        this._handle_connected = handler;
     }
+
+    on_disconnected(handler) {
+        this._handle_disconnected = handler;
+    }
+
 
     on_message(handler) {
         assert(handler, "handler is required");
@@ -122,15 +158,17 @@ export class WebsocketRPCConnection {
             console.error('No client found for targetId:', targetId);
             return;
         }
-        const websocket = this._clients[targetId].socket;
+        const client = this._clients[targetId];
+        const websocket = client.websocket;
         if (!message.from.includes('/')) {
             message.from = `${this.workspace}/${message.from}`;
         }
         const updatedMessage = {
             ...message,
+            ws: this.workspace,
             to: targetId,
             from: message.from,
-            user: this.userInfo,
+            user: client.userInfo,
         };
         const encodedUpdatedMessage = msgpack_packb(updatedMessage);
 
@@ -149,6 +187,119 @@ export class WebsocketRPCConnection {
 
     disconnect(reason) {
         console.info(`Websocket connection disconnected (${reason})`);
+    }
+}
+
+export class RedisRPCConnection {
+    /**
+     * Represent a Redis connection for handling RPC-like messaging.
+     * @param {EventBus} eventBus - Event bus for messaging.
+     * @param {string} workspace - Workspace identifier.
+     * @param {string} clientId - Client identifier.
+     * @param {UserInfo} userInfo - User information.
+     * @param {string} managerId - Manager identifier.
+     */
+    constructor(eventBus, workspace, clientId, userInfo, managerId) {
+        if (!workspace || clientId.includes("/")) {
+            throw new Error("Invalid workspace or client ID");
+        }
+        this._workspace = workspace;
+        this._clientId = clientId;
+        this._userInfo = userInfo;
+        this._stop = false;
+        this._eventBus = eventBus;
+        this._handleConnected = null;
+        this._handleDisconnected = null;
+        this._handleMessage = null;
+        this.manager_id = managerId;
+    }
+
+    /**
+     * Register a disconnection event handler.
+     * @param {function} handler - Disconnection handler.
+     */
+    on_disconnected(handler) {
+        this._handleDisconnected = handler;
+    }
+
+    /**
+     * Register a connection open event handler.
+     * @param {function} handler - Connection handler.
+     */
+    on_connected(handler) {
+        this._handleConnected = handler;
+    }
+
+    /**
+     * Set message handler.
+     * @param {function} handler - Message handler.
+     */
+    on_message(handler) {
+        this._handleMessage = handler;
+        this._eventBus.on(`${this._workspace}/${this._clientId}:msg`, handler);
+        this._eventBus.on(`${this._workspace}/*:msg`, handler);
+        if (this._handleConnected) {
+            this._handleConnected(this);
+        }
+    }
+
+    /**
+     * Send message after packing additional info.
+     * @param {Object|Uint8Array} data - Data to send.
+     */
+    async emit_message(data) {
+        if (!(data instanceof Uint8Array)) {
+            throw new Error("Data must be bytes");
+        }
+        if (this._stop) {
+            throw new Error(`Connection has already been closed (client: ${this._workspace}/${this._clientId})`);
+        }
+        const decoder = new Decoder();
+        const unpacker = decoder.decodeMulti(data);
+        const { value: message } = unpacker.next();
+
+        const pos = decoder.pos;
+        
+        let targetId = message.to;
+
+        if (!targetId.includes("/")) {
+            if (targetId.includes("/workspace-manager-")) {
+                throw new Error(`Invalid target ID: ${targetId}, it appears that the target is a workspace manager (target_id should starts with */)`);
+            }
+            targetId = `${this._workspace}/${targetId}`;
+        }
+
+        const sourceId = `${this._workspace}/${this._clientId}`;
+
+        message.ws = this._workspace === "*" ? targetId.split("/")[0] : this._workspace;
+        message.to = targetId;
+        message.from = sourceId;
+        message.user = this._userInfo;
+        const encodedUpdatedMessage = msgpack_packb(message);
+
+        const remainingData = data.slice(pos);
+        const finalData = new Uint8Array(encodedUpdatedMessage.length + remainingData.length);
+        finalData.set(encodedUpdatedMessage, 0);
+        finalData.set(new Uint8Array(remainingData), encodedUpdatedMessage.length);
+
+        this._eventBus.emit(`${targetId}:msg`, finalData.buffer);
+    }
+
+    /**
+     * Handle disconnection.
+     * @param {string} [reason] - Reason for disconnection.
+     */
+    async disconnect(reason) {
+        this._stop = true;
+        if (this._handleMessage) {
+            this._eventBus.off(`${this._workspace}/${this._clientId}:msg`, this._handleMessage);
+            this._eventBus.off(`${this._workspace}/*:msg`, this._handleMessage);
+        }
+        this._handleMessage = null;
+        console.info(`Redis Connection Disconnected: ${reason}`);
+        if (this._handleDisconnected) {
+            await this._handleDisconnected(reason);
+        }
     }
 }
 

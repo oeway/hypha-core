@@ -1,4 +1,4 @@
-importScripts("https://cdn.jsdelivr.net/npm/imjoy-rpc@0.5.55/dist/hypha-rpc-websocket.min.js");
+importScripts("https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.22/dist/hypha-rpc-websocket.min.js");
 hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then((api)=>{
     console.log("Hypha WebWorker initialized.", api)
 }).catch(console.error);

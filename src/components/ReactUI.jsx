@@ -292,7 +292,7 @@ export default function ReactUI({onReady}) {
                 return currentScript || '';
             },
             renderApp,
-        }).then((svc) => {
+        }, {overwrite: true}).then((svc) => {
             onReady && onReady(svc);
         });
     }, [api]);

@@ -4,6 +4,7 @@ const { EsbuildPlugin } = require("esbuild-loader");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
 const webpack = require("webpack");
+const { SourceMap } = require("module");
 
 const libConfig = {
   name: 'core',
@@ -29,7 +30,8 @@ const libConfig = {
       "path": require.resolve("path-browserify"),
       "buffer": require.resolve("buffer/"),
       "process": require.resolve("process/browser"),
-      "fs": false
+      "fs": false,
+      "module": false,
     },
   },
 };
@@ -128,6 +130,7 @@ const appConfig = {
       new EsbuildPlugin({
         target: "es2015",
         css: true,
+        sourcemap: true,
       }),
     ],
   },
