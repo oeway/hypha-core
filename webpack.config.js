@@ -59,6 +59,7 @@ const appConfig = {
     }),
     new CopyWebpackPlugin({
       patterns: [
+        { from: path.resolve(__dirname, "public", "lite.html"), to: path.resolve(__dirname, "dist") },
         { from: path.resolve(__dirname, "public", "hypha-app-iframe.html"), to: path.resolve(__dirname, "dist") },
         { from: path.resolve(__dirname, "public", "hypha-app-webpython.js"), to: path.resolve(__dirname, "dist") },
         { from: path.resolve(__dirname, "public", "hypha-app-webworker.js"), to: path.resolve(__dirname, "dist") },
