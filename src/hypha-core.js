@@ -239,9 +239,13 @@ class HyphaServer extends MessageEmitter {
             if (!config.workspace) {
                 config.workspace = "workspace-" + randId();
             }
+            const baseUrl = this.url.endsWith("/") ? this.url.slice(0, -1) : this.url;
+            // send connection info
             websocket.send(JSON.stringify({
                 "type": "connection_info",
                 "hypha_version": "0.1.0",
+                "public_base_url": baseUrl,
+                "local_base_url": baseUrl,
                 "manager_id": this.workspaceManagerId,
                 "workspace": config.workspace,
                 "client_id": config.client_id,
