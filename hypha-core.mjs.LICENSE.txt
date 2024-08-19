@@ -1,0 +1,528 @@
+/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh <http://feross.org>
+ * @license  MIT
+ */
+
+/*! !./node_modules/worker-loader/dist/workers/InlineWorker.js */
+
+/*! . */
+
+/*! ../../package.json */
+
+/*! ../contrib/has-cors.js */
+
+/*! ../contrib/parseqs.js */
+
+/*! ../contrib/yeast.js */
+
+/*! ../globalThis.js */
+
+/*! ../package.json */
+
+/*! ../transport.js */
+
+/*! ../util.js */
+
+/*! ./../../../../buffer/index.js */
+
+/*! ./../webpack/buildin/global.js */
+
+/*! ./CachedKeyDecoder.mjs */
+
+/*! ./DecodeError.mjs */
+
+/*! ./Decoder.mjs */
+
+/*! ./Encoder.mjs */
+
+/*! ./ExtData.mjs */
+
+/*! ./ExtensionCodec.mjs */
+
+/*! ./binary.js */
+
+/*! ./commons.js */
+
+/*! ./contrib/backo2.js */
+
+/*! ./contrib/parseqs.js */
+
+/*! ./contrib/parseuri.js */
+
+/*! ./decode.mjs */
+
+/*! ./decodeAsync.mjs */
+
+/*! ./decodePacket.js */
+
+/*! ./encode.mjs */
+
+/*! ./encodePacket.js */
+
+/*! ./globalThis.js */
+
+/*! ./int.mjs */
+
+/*! ./is-binary.js */
+
+/*! ./main.js */
+
+/*! ./manager.js */
+
+/*! ./on.js */
+
+/*! ./plugin.webworker.js */
+
+/*! ./pluginCore.js */
+
+/*! ./pluginIframe.js */
+
+/*! ./polling.js */
+
+/*! ./rpc.js */
+
+/*! ./socket.js */
+
+/*! ./timestamp.mjs */
+
+/*! ./transport.js */
+
+/*! ./transports/index.js */
+
+/*! ./transports/websocket-constructor.js */
+
+/*! ./url.js */
+
+/*! ./util.js */
+
+/*! ./utils */
+
+/*! ./utils.js */
+
+/*! ./utils/int.mjs */
+
+/*! ./utils/prettyByte.mjs */
+
+/*! ./utils/schema */
+
+/*! ./utils/schema.js */
+
+/*! ./utils/stream.mjs */
+
+/*! ./utils/typedArrays.mjs */
+
+/*! ./utils/utf8.mjs */
+
+/*! ./webrtc-client.js */
+
+/*! ./websocket-constructor.js */
+
+/*! ./websocket.js */
+
+/*! ./xmlhttprequest.js */
+
+/*! @msgpack/msgpack */
+
+/*! @socket.io/base64-arraybuffer */
+
+/*! @socket.io/component-emitter */
+
+/*! base64-js */
+
+/*! engine.io-client */
+
+/*! engine.io-parser */
+
+/*! exports provided: API_VERSION, RPC */
+
+/*! exports provided: Backoff */
+
+/*! exports provided: CachedKeyDecoder */
+
+/*! exports provided: Connection, default */
+
+/*! exports provided: DEFAULT_MAX_DEPTH, DEFAULT_INITIAL_BUFFER_SIZE, Encoder */
+
+/*! exports provided: DataViewIndexOutOfBoundsError, Decoder */
+
+/*! exports provided: DecodeError */
+
+/*! exports provided: EXT_TIMESTAMP, encodeTimeSpecToTimestamp, encodeDateToTimeSpec, encodeTimestampExtension, decodeTimestampToTimeSpec, decodeTimestampExtension, timestampExtension */
+
+/*! exports provided: Emitter */
+
+/*! exports provided: ExtData */
+
+/*! exports provided: ExtensionCodec */
+
+/*! exports provided: Manager */
+
+/*! exports provided: PACKET_TYPES, PACKET_TYPES_REVERSE, ERROR_PACKET */
+
+/*! exports provided: Polling, Request */
+
+/*! exports provided: RPC, API_VERSION, VERSION, loadRequirements, getRTCService, registerRTCService, login, connectToServer */
+
+/*! exports provided: RPC, API_VERSION, VERSION, loadRequirements, getRTCService, registerRTCService, login, connectToServer, setupLocalClient */
+
+/*! exports provided: RPC, API_VERSION, VERSION, loadRequirements, waitForInitialization, setupRPC */
+
+/*! exports provided: Socket */
+
+/*! exports provided: Socket, protocol, Transport, transports, installTimerFunctions, parse, nextTick */
+
+/*! exports provided: Transport */
+
+/*! exports provided: UINT32_MAX, setUint64, setInt64, getInt64, getUint64 */
+
+/*! exports provided: WS */
+
+/*! exports provided: XHR */
+
+/*! exports provided: connectRPC */
+
+/*! exports provided: decode, encode */
+
+/*! exports provided: decodeAsync, decodeArrayStream, decodeMultiStream, decodeStream */
+
+/*! exports provided: deconstructPacket, reconstructPacket */
+
+/*! exports provided: default */
+
+/*! exports provided: defaultDecodeOptions, decode, decodeMulti */
+
+/*! exports provided: encode */
+
+/*! exports provided: encode, decode */
+
+/*! exports provided: encode, decode, decodeMulti, decodeAsync, decodeArrayStream, decodeMultiStream, decodeStream, Decoder, DecodeError, DataViewIndexOutOfBoundsError, Encoder, ExtensionCodec, ExtData, EXT_TIMESTAMP, encodeDateToTimeSpec, encodeTimeSpecToTimestamp, decodeTimestampToTimeSpec, encodeTimestampExtension, decodeTimestampExtension */
+
+/*! exports provided: encode, decode, yeast */
+
+/*! exports provided: ensureUint8Array, createDataView */
+
+/*! exports provided: getRTCService, registerRTCService */
+
+/*! exports provided: globalThisShim */
+
+/*! exports provided: hasCORS */
+
+/*! exports provided: isAsyncIterable, asyncIterableFromStream, ensureAsyncIterable */
+
+/*! exports provided: isBinary, hasBinary */
+
+/*! exports provided: name, version, description, module, types, scripts, repository, keywords, author, license, bugs, homepage, dependencies, devDependencies, eslintConfig, default */
+
+/*! exports provided: nextTick, WebSocket, usingBrowserWebSocket, defaultBinaryType */
+
+/*! exports provided: on */
+
+/*! exports provided: parse */
+
+/*! exports provided: pick, installTimerFunctions, byteLength */
+
+/*! exports provided: prettyByte */
+
+/*! exports provided: protocol, Manager, Socket, io, connect, default */
+
+/*! exports provided: protocol, PacketType, Encoder, Decoder */
+
+/*! exports provided: protocol, encodePacket, encodePayload, decodePacket, decodePayload */
+
+/*! exports provided: randId, dtypeToTypedArray, loadRequirementsInWindow, loadRequirementsInWebworker, loadRequirements, normalizeConfig, typedArrayToDtypeMapping, typedArrayToDtype, cacheRequirements, setupServiceWorker, assert, urlJoin, waitFor, MessageEmitter */
+
+/*! exports provided: randId, dtypeToTypedArray, loadRequirementsInWindow, loadRequirementsInWebworker, loadRequirements, normalizeConfig, typedArrayToDtypeMapping, typedArrayToDtype, cacheRequirements, setupServiceWorker, urlJoin, MessageEmitter */
+
+/*! exports provided: setupRPC, waitForInitialization, VERSION, RPC, API_VERSION, loadRequirements, Connection, connectToServer */
+
+/*! exports provided: transports */
+
+/*! exports provided: url */
+
+/*! exports provided: utf8Count, utf8EncodeJs, TEXT_ENCODER_THRESHOLD, utf8EncodeTE, utf8DecodeJs, TEXT_DECODER_THRESHOLD, utf8DecodeTD */
+
+/*! ieee754 */
+
+/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
+
+/*! isarray */
+
+/*! no static exports found */
+
+/*! socket.io-client */
+
+/*! socket.io-parser */
+
+/*!********************!*\
+  !*** ./src/rpc.js ***!
+  \********************/
+
+/*!*********************!*\
+  !*** ./src/main.js ***!
+  \*********************/
+
+/*!**********************!*\
+  !*** ./package.json ***!
+  \**********************/
+
+/*!**********************!*\
+  !*** ./src/utils.js ***!
+  \**********************/
+
+/*!**************************!*\
+  !*** ./src/hypha/rpc.js ***!
+  \**************************/
+
+/*!***************************!*\
+  !*** ./src/pluginCore.js ***!
+  \***************************/
+
+/*!****************************!*\
+  !*** ./src/hypha/utils.js ***!
+  \****************************/
+
+/*!****************************!*\
+  !*** ./src/utils/index.js ***!
+  \****************************/
+
+/*!*****************************!*\
+  !*** ./src/pluginIframe.js ***!
+  \*****************************/
+
+/*!*****************************!*\
+  !*** ./src/socketIOMain.js ***!
+  \*****************************/
+
+/*!*****************************!*\
+  !*** ./src/utils/schema.js ***!
+  \*****************************/
+
+/*!******************************!*\
+  !*** ./src/webrtc-client.js ***!
+  \******************************/
+
+/*!*********************************!*\
+  !*** ./src/hypha/sse-client.js ***!
+  \*********************************/
+
+/*!*********************************!*\
+  !*** ./src/plugin.webworker.js ***!
+  \*********************************/
+
+/*!*********************************!*\
+  !*** ./src/websocket-client.js ***!
+  \*********************************/
+
+/*!***********************************!*\
+  !*** (webpack)/buildin/global.js ***!
+  \***********************************/
+
+/*!************************************!*\
+  !*** ./src/hypha/webrtc-client.js ***!
+  \************************************/
+
+/*!**************************************!*\
+  !*** ./node_modules/buffer/index.js ***!
+  \**************************************/
+
+/*!***************************************!*\
+  !*** ./node_modules/ieee754/index.js ***!
+  \***************************************/
+
+/*!***************************************!*\
+  !*** ./node_modules/isarray/index.js ***!
+  \***************************************/
+
+/*!***************************************!*\
+  !*** ./src/hypha/websocket-client.js ***!
+  \***************************************/
+
+/*!*****************************************!*\
+  !*** ./node_modules/base64-js/index.js ***!
+  \*****************************************/
+
+/*!*******************************************************!*\
+  !*** ./node_modules/socket.io-client/build/esm/on.js ***!
+  \*******************************************************/
+
+/*!********************************************************!*\
+  !*** ./node_modules/socket.io-client/build/esm/url.js ***!
+  \********************************************************/
+
+/*!*********************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/util.js ***!
+  \*********************************************************/
+
+/*!**********************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/index.js ***!
+  \**********************************************************/
+
+/*!**********************************************************!*\
+  !*** ./node_modules/engine.io-parser/build/esm/index.js ***!
+  \**********************************************************/
+
+/*!**********************************************************!*\
+  !*** ./node_modules/socket.io-client/build/esm/index.js ***!
+  \**********************************************************/
+
+/*!**********************************************************!*\
+  !*** ./node_modules/socket.io-parser/build/esm/index.js ***!
+  \**********************************************************/
+
+/*!***********************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/socket.js ***!
+  \***********************************************************/
+
+/*!***********************************************************!*\
+  !*** ./node_modules/socket.io-client/build/esm/socket.js ***!
+  \***********************************************************/
+
+/*!***********************************************************!*\
+  !*** ./node_modules/socket.io-parser/build/esm/binary.js ***!
+  \***********************************************************/
+
+/*!************************************************************!*\
+  !*** ./node_modules/engine.io-parser/build/esm/commons.js ***!
+  \************************************************************/
+
+/*!************************************************************!*\
+  !*** ./node_modules/socket.io-client/build/esm/manager.js ***!
+  \************************************************************/
+
+/*!*************************************************************!*\
+  !*** ./node_modules/@socket.io/component-emitter/index.mjs ***!
+  \*************************************************************/
+
+/*!**************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/index.mjs ***!
+  \**************************************************************/
+
+/*!**************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/transport.js ***!
+  \**************************************************************/
+
+/*!**************************************************************!*\
+  !*** ./node_modules/socket.io-parser/build/esm/is-binary.js ***!
+  \**************************************************************/
+
+/*!***************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/decode.mjs ***!
+  \***************************************************************/
+
+/*!***************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/encode.mjs ***!
+  \***************************************************************/
+
+/*!****************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/Decoder.mjs ***!
+  \****************************************************************/
+
+/*!****************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/Encoder.mjs ***!
+  \****************************************************************/
+
+/*!****************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/ExtData.mjs ***!
+  \****************************************************************/
+
+/*!*****************************************************************!*\
+  !*** ./node_modules/worker-loader/dist/workers/InlineWorker.js ***!
+  \*****************************************************************/
+
+/*!******************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/timestamp.mjs ***!
+  \******************************************************************/
+
+/*!******************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/utils/int.mjs ***!
+  \******************************************************************/
+
+/*!******************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/contrib/yeast.js ***!
+  \******************************************************************/
+
+/*!*******************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/utils/utf8.mjs ***!
+  \*******************************************************************/
+
+/*!*******************************************************************!*\
+  !*** ./node_modules/socket.io-client/build/esm/contrib/backo2.js ***!
+  \*******************************************************************/
+
+/*!********************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/DecodeError.mjs ***!
+  \********************************************************************/
+
+/*!********************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/decodeAsync.mjs ***!
+  \********************************************************************/
+
+/*!********************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/contrib/parseqs.js ***!
+  \********************************************************************/
+
+/*!*********************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/utils/stream.mjs ***!
+  \*********************************************************************/
+
+/*!*********************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/contrib/has-cors.js ***!
+  \*********************************************************************/
+
+/*!*********************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/contrib/parseuri.js ***!
+  \*********************************************************************/
+
+/*!*********************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/transports/index.js ***!
+  \*********************************************************************/
+
+/*!***********************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/ExtensionCodec.mjs ***!
+  \***********************************************************************/
+
+/*!***********************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/globalThis.browser.js ***!
+  \***********************************************************************/
+
+/*!***********************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/transports/polling.js ***!
+  \***********************************************************************/
+
+/*!*************************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/CachedKeyDecoder.mjs ***!
+  \*************************************************************************/
+
+/*!*************************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/utils/prettyByte.mjs ***!
+  \*************************************************************************/
+
+/*!*************************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/transports/websocket.js ***!
+  \*************************************************************************/
+
+/*!*************************************************************************!*\
+  !*** ./node_modules/engine.io-parser/build/esm/decodePacket.browser.js ***!
+  \*************************************************************************/
+
+/*!*************************************************************************!*\
+  !*** ./node_modules/engine.io-parser/build/esm/encodePacket.browser.js ***!
+  \*************************************************************************/
+
+/*!**************************************************************************!*\
+  !*** ./node_modules/@msgpack/msgpack/dist.es5+esm/utils/typedArrays.mjs ***!
+  \**************************************************************************/
+
+/*!***********************************************************************************!*\
+  !*** ./node_modules/@socket.io/base64-arraybuffer/dist/base64-arraybuffer.es5.js ***!
+  \***********************************************************************************/
+
+/*!**************************************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/transports/xmlhttprequest.browser.js ***!
+  \**************************************************************************************/
+
+/*!*********************************************************************************************!*\
+  !*** ./node_modules/engine.io-client/build/esm/transports/websocket-constructor.browser.js ***!
+  \*********************************************************************************************/
