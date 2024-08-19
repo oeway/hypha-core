@@ -24,18 +24,11 @@ jobs:
     - name: Build the project
       run: npm run build
 
+    - name: Add .nojekyll file
+      run: touch dist/.nojekyll
+
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./dist
-
-    - name: Clean up old gh-pages artifacts
-      run: |
-        git fetch origin gh-pages
-        git checkout gh-pages
-        git pull
-        git rm -r --cached .
-        git clean -fd
-        git commit -m "Cleanup old files"
-        git push origin gh-pages
