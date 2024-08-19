@@ -4,7 +4,7 @@ const { EsbuildPlugin } = require("esbuild-loader");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
 const webpack = require("webpack");
-const { SourceMap } = require("module");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
 
 const libConfig = {
   name: 'core',
@@ -56,6 +56,13 @@ const appConfig = {
     new webpack.IgnorePlugin({
       resourceRegExp: /^\.\/locale$/,
       contextRegExp: /moment$/
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        { from: path.resolve(__dirname, "public", "hypha-app-iframe.html"), to: path.resolve(__dirname, "dist") },
+        { from: path.resolve(__dirname, "public", "hypha-app-webpython.js"), to: path.resolve(__dirname, "dist") },
+        { from: path.resolve(__dirname, "public", "hypha-app-webworker.js"), to: path.resolve(__dirname, "dist") },
+      ],
     }),
   ],
   resolve: {

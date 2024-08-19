@@ -16,7 +16,7 @@ class HyphaServer extends MessageEmitter {
         config = config || {};
         this.redis = redisClient;
         this.port = config.port || 8080;
-        this.baseUrl = config.base_url || "./";
+        this.baseUrl = config.base_url || new URL('./', document.location.href).href;
         if (config.url && config.port) {
             throw new Error("Please provide either url or port, not both.");
         }
