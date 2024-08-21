@@ -1,13 +1,15 @@
 {
   "name": "hypha-core",
-  "version": "0.20.27",
+  "version": "0.20.27-post1",
   "description": "Hypha Core",
   "scripts": {
     "start": "webpack serve --mode=development",
-    "build": "webpack --mode=production",
+    "build": "webpack --mode=development",
     "test": "playwright test",
     "publish-npm": "npm run build && npm publish --access public"
   },
+  "main": "index.js",
+  "types": "index.d.ts",
   "author": "Wei Ouyang",
   "license": "MIT",
   "devDependencies": {

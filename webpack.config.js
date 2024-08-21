@@ -6,8 +6,8 @@ const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
 const webpack = require("webpack");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 
-const libConfig = {
-  name: 'core',
+const libConfigESM = {
+  name: 'core-esm',
   entry: {
     lib: path.resolve(__dirname, "src", "hypha-core.js"),
   },
@@ -33,6 +33,76 @@ const libConfig = {
       "fs": false,
       "module": false,
     },
+  },
+  module: {
+    rules: [
+      {
+        test: /\.[jt]sx?$/,
+        loader: "esbuild-loader",
+        options: {
+          target: "es2015",
+        },
+      },
+    ],
+  },
+  optimization: {
+    minimizer: [
+      new EsbuildPlugin({
+        target: "es2015",
+        css: true,
+        sourcemap: true,
+      }),
+    ],
+  },
+};
+
+const libConfigUMD = {
+  name: 'core-umd',
+  entry: {
+    lib: path.resolve(__dirname, "src", "hypha-core.js"),
+  },
+  output: {
+    filename: "hypha-core.umd.js",
+    path: path.resolve(__dirname, "dist"),
+    library: {
+      name: "HyphaCore",
+      type: "umd",  // UMD module output
+    },
+    globalObject: 'this', // Ensures compatibility in different environments
+  },
+  resolve: {
+    extensions: [".js"],
+    plugins: [],
+    fallback: {
+      "stream": require.resolve("stream-browserify"),
+      "util": require.resolve("util/"),
+      "path": require.resolve("path-browserify"),
+      "buffer": require.resolve("buffer/"),
+      "process": require.resolve("process/browser"),
+      "fs": false,
+      "module": false,
+    },
+  },
+  module: {
+    rules: [
+      {
+        test: /\.[jt]sx?$/,
+        include: path.resolve(__dirname, "src"), // Only compile files in the src folder
+        loader: "esbuild-loader",
+        options: {
+          target: "es2015",
+        },
+      },
+    ],
+  },
+  optimization: {
+    minimizer: [
+      new EsbuildPlugin({
+        target: "es2015",
+        css: true,
+        sourcemap: true,
+      }),
+    ],
   },
 };
 
@@ -150,4 +220,4 @@ const appConfig = {
   },
 };
 
-module.exports = [appConfig, libConfig];
+module.exports = [appConfig, libConfigESM, libConfigUMD];
