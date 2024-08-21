@@ -500,12 +500,23 @@ export class Workspace {
             config.workspace = ws;
             await this.eventBus.emit("add_window", config);
             await new Promise((resolve) => setTimeout(resolve, 0));
+            let count = 0;
+            while (!document.getElementById(config.window_id) && count < 9) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+                count++;
+            }
             elem = document.getElementById(config.window_id);
             if (!elem) {
                 throw new Error(`iframe element not found ${config.window_id} in ${9 * 500 / 1000} s`);
             }
             if (elem.tagName !== "IFRAME") {
-                throw new Error("iframe element must be an iframe: " + config.window_id);
+                // create a child iframe
+                const iframe = document.createElement("iframe");
+                iframe.style.width = config.width || "100%";
+                iframe.style.height = config.height || "100%";
+                iframe.src = config.src;
+                elem.appendChild(iframe);
+                elem = iframe;
             }
         }
 
@@ -578,9 +589,7 @@ export class Workspace {
                 return await this.createWorker(config, ws, this.baseUrl + "hypha-app-webworker.js");
             case "window":
             case "iframe":
-                if(!config.src){
-                    config.src = this.baseUrl + "hypha-app-iframe.html";
-                }
+                config.src = this.baseUrl + "hypha-app-iframe.html";
                 return await this.createWindow(config, extra_config, context);
             case "web-python":
                 return await this.createWorker(config, ws, this.baseUrl + "hypha-app-webpython.js");

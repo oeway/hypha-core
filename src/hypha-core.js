@@ -113,7 +113,7 @@ class HyphaServer extends MessageEmitter {
                 cid,
             }
         );
-        console.log("plugin initialized:", pluginConfig, event.source);
+        console.log("plugin initialized:", pluginConfig);
         const core = new imjoyRPC.RPC(coreConnection, { name: "core"});
         core.setInterface(coreInterface);
         core.on("interfaceSetAsRemote", () => {
