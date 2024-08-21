@@ -7,7 +7,7 @@
 
     <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
     <script type="module">
-      import { HyphaServer, connectToServer } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.26/dist/hypha-core.mjs";
+      import { HyphaServer, connectToServer } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.27/dist/hypha-core.mjs";
       const hyphaServer = new HyphaServer();
       hyphaServer.on("add_window", (config) => {
         const wb = new WinBox(config.name || config.src.slice(0, 128), {

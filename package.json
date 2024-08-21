@@ -1,11 +1,12 @@
 {
   "name": "hypha-core",
-  "version": "0.20.26",
+  "version": "0.20.27",
   "description": "Hypha Core",
   "scripts": {
     "start": "webpack serve --mode=development",
     "build": "webpack --mode=production",
-    "test": "playwright test"
+    "test": "playwright test",
+    "publish-npm": "npm run build && npm publish --access public"
   },
   "author": "Wei Ouyang",
   "license": "MIT",
@@ -37,7 +38,7 @@
     "autoprefixer": "^10.4.19",
     "buffer": "^6.0.3",
     "chai": "^4.3.4",
-    "hypha-rpc": "^0.20.26",
+    "hypha-rpc": "^0.20.27",
     "imjoy-rpc": "^0.5.59",
     "mocha": "^8.4.0",
     "mock-socket": "^9.3.1",

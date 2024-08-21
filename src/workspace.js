@@ -76,11 +76,11 @@ export class Workspace {
         this.eventBus.on("client_ready", async (svc) => {
             this.plugins[svc.id] = svc;
         });
-
         const rpc = new hyphaWebsocketClient.RPC(connection, {
             client_id: config.client_id,
             default_context: { connection_type: "websocket" },
             workspace,
+            server_base_url: this.serverUrl,
             silent: false,
         });
         this._rpc = rpc;
