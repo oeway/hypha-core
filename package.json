@@ -1,6 +1,6 @@
 {
   "name": "hypha-core",
-  "version": "0.20.27-post2",
+  "version": "0.20.28",
   "description": "Hypha Core",
   "scripts": {
     "start": "webpack serve --mode=development",

@@ -111,11 +111,11 @@ export async function setupHyphaClients(api) {
     // await viewer.view_image("https://images.proteinatlas.org/61448/1319_C10_2_blue_red_green.jpg")
 
     // // console.log("chatbot initialized:", chatbot)
-    // const webPython = await api.loadPlugin({src: test_web_python_src})
+    // const webPython = await api.loadApp({src: test_web_python_src})
     // await webPython.run({});
     
 
-    // const webPython = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webPythonTemplate.imjoy.html"})
+    // const webPython = await api.loadApp({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webPythonTemplate.imjoy.html"})
     // await webPython.run({});
 
     // const viewer = await api.createWindow({src: "https://kaibu.org/#/app"})
@@ -152,12 +152,12 @@ export async function setupHyphaClients(api) {
     // console.log("services", await api.listServices())
 
 
-    const iframeWindow = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
+    const iframeWindow = await api.loadApp({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/windowTemplate.imjoy.html"})
 
     await iframeWindow.run();
     console.log("iframeWindow:", iframeWindow)
 
-    const plugin = await api.loadPlugin({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
+    const plugin = await api.loadApp({src: "https://raw.githubusercontent.com/imjoy-team/imjoy-core/master/src/plugins/webWorkerTemplate.imjoy.html"})
     await plugin.run();
     console.log("web-worker plugin:", plugin)
     return api;

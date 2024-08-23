@@ -137,18 +137,19 @@ export class Workspace {
         }
     }
     
-    async unregisterService(service, context) {
+    async unregisterService(serviceId, context) {
         const ws = context.ws;
-        const clientId = context.from;
-        service.config.workspace = ws;
-        if (!service.id.includes("/")) {
-            service.id = `${ws}/${service.id}`;
+        if (!serviceId.includes("/")) {
+            serviceId = `${ws}/${serviceId}`;
         }
-        if (!service.id.includes(":")) {
+        if (!serviceId.includes(":")) {
             throw new Error("Service id info must contain ':'");
         }
-        service.app_id = service.app_id || "*";
-        const key = `services:${service.config.visibility}:${service.id}@${service.app_id}`;
+        if (!serviceId.includes("@")) {
+            serviceId = serviceId + "@*";
+        }
+
+        const key = `services:*:${serviceId}`;
         console.info(`Removing service: ${key}`);
     
         // Check if the service exists before removal
@@ -566,7 +567,7 @@ export class Workspace {
         }
     }
 
-    async loadPlugin(config, extra_config, context) {
+    async loadApp(config, extra_config, context) {
         let code;
         const ws = context.ws;
         const src = config.src;
@@ -639,9 +640,9 @@ export class Workspace {
         return await this.waitForClient(workspace + "/" + clientId, 60000);
     }
 
-    async getPlugin(config, extra_config, context) {
+    async getApp(config, extra_config, context) {
         if (typeof config === "string") {
-            return await this.loadPlugin({ src: config }, {}, context);
+            return await this.loadApp({ src: config }, {}, context);
         } else if (config.id) {
             return this.plugins[config.id];
         } else if (config.name) {
@@ -735,14 +736,14 @@ export class Workspace {
                 };
                 return token;
             },
-            "load_plugin": async (config, extra_config, context) => {
-                return this.loadPlugin(config, extra_config, context);
+            "load_app": async (config, extra_config, context) => {
+                return this.loadApp(config, extra_config, context);
             },
             "create_window": async (config, extra_config, context) => {
                 return this.createWindow(config, extra_config, context);
             },
-            "get_plugin": async (config, extra_config, context) => {
-                return this.getPlugin(config, extra_config, context);
+            "get_app": async (config, extra_config, context) => {
+                return this.getApp(config, extra_config, context);
             },
             "register_service": async (service, context) => {
                 return await this.registerService(service, context);
