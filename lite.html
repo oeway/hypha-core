@@ -7,7 +7,7 @@
 
     <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
     <script type="module">
-      import { HyphaServer, connectToServer } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.26/dist/hypha-core.mjs";
+      import { HyphaServer, connectToServer } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.27/dist/hypha-core.mjs";
       const hyphaServer = new HyphaServer();
       hyphaServer.on("add_window", (config) => {
         const wb = new WinBox(config.name || config.src.slice(0, 128), {
@@ -22,18 +22,18 @@
         workspace: "default",
       });
       // Function to handle loading and running a plugin
-      async function loadPluginFromUrl(url) {
-        const plugin = await api.loadPlugin({ src: url });
+      async function loadAppFromUrl(url) {
+        const plugin = await api.loadApp({ src: url });
         await plugin.run({ config: {}, data: {} });
         console.log("Loaded and ran plugin from URL:", url);
       }
-      window.loadPlugin = loadPluginFromUrl;
+      window.loadApp = loadAppFromUrl;
 
       // If url query contains plugin, load and run the plugin
       const urlParams = new URLSearchParams(window.location.search);
       const pluginUrls = urlParams.getAll("plugin");
       for (const url of pluginUrls) {
-        await window.loadPlugin(url);
+        await window.loadApp(url);
       }
 
       // Load plugin from menu
@@ -43,10 +43,10 @@
           dropdown.style.display === "block" ? "none" : "block";
       };
 
-      window.promptLoadPlugin = async function () {
+      window.promptloadApp = async function () {
         const url = prompt("Enter the plugin URL:");
         if (url) {
-          await loadPluginFromUrl(url);
+          await loadAppFromUrl(url);
         }
       };
       // Close the dropdown if the user clicks outside of it
@@ -116,8 +116,8 @@
         onclick="toggleDropdown()"
       />
       <div class="dropdown" id="dropdownMenu">
-        <a href="#" onclick="promptLoadPlugin()">+ Load Plugin</a>
-        <a href="#" onclick="loadPlugin('https://if.imjoy.io')">ImJoy Fiddle</a>
+        <a href="#" onclick="promptloadApp()">+ Load Plugin</a>
+        <a href="#" onclick="loadApp('https://if.imjoy.io')">ImJoy Fiddle</a>
       </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
