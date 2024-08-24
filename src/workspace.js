@@ -84,7 +84,8 @@ export class Workspace {
             silent: false,
         });
         this._rpc = rpc;
-        await rpc.register_service(Object.assign(this.getDefaultServices(), config.default_services || {}), {notify: false});
+        const defaultServices = this.getDefaultService();
+        await rpc.register_service(Object.assign(defaultServices, config.default_service || {}), {notify: false});
 
     }
 
@@ -656,8 +657,8 @@ export class Workspace {
         }
     }
 
-    getDefaultServices() {
-        return {
+    getDefaultService() {
+        const service = {
             "id": "default",
             "name": "Default workspace management service",
             "description": "Services for managing workspace.",
@@ -749,5 +750,9 @@ export class Workspace {
                 return await this.registerService(service, context);
             },
         };
+        // make it compatible with imjoy
+        service.getPlugin = service.get_app;
+        service.loadPlugin = service.load_app;
+        return service;
     }
 }

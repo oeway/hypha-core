@@ -39,7 +39,7 @@ class HyphaCore extends MessageEmitter {
         this.server = null;
         this.workspaceManagerId = "workspace-manager";
         this.connections = {};
-        this.defaultServices = config.default_services || {};
+        this.defaultServices = config.default_service || {};
         this.imjoyPluginWindows = new Map();
 
         this.on("add_window", (config) => {
@@ -65,7 +65,7 @@ class HyphaCore extends MessageEmitter {
             console.error("Client id not found for the plugin: ", data);
             return;
         }
-        const defaultService = this.workspaceManager.getDefaultServices();
+        const defaultService = this.workspaceManager.getDefaultService();
         const coreInterface = {};
         for (const key in defaultService) {
             const camelKey = toCamelCase(key);
@@ -193,7 +193,7 @@ class HyphaCore extends MessageEmitter {
             await this.workspaceManager.setup({
                 client_id: this.workspaceManagerId,
                 method_timeout: 60,
-                default_services: this.defaultServices,
+                default_service: this.defaultServices,
             })
         }
         this.server.on('connection', async websocket => {

@@ -11,12 +11,12 @@ declare module "hypha-core" {
     setup(config: {
       client_id: string;
       method_timeout: number;
-      default_services: any;
+      default_service: any;
     }): Promise<void>;
 
     static tokens: { [token: string]: { workspace: Workspace } };
 
-    getDefaultServices(): any;
+    getDefaultService(): any;
 
     eventBus: {
       emit(event: string, data: any): void;
@@ -142,7 +142,7 @@ declare module "hypha-core" {
       port?: number;
       base_url?: string;
       url?: string;
-      default_services?: { [key: string]: any };
+      default_service?: { [key: string]: any };
     });
     api?: HyphaAPI;
     start(config?:ServerConfig ): Promise<HyphaAPI>;
