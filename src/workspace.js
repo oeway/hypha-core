@@ -511,17 +511,16 @@ export class Workspace {
             if (!elem) {
                 throw new Error(`iframe element not found ${config.window_id} in ${9 * 500 / 1000} s`);
             }
-            if (elem.tagName !== "IFRAME") {
-                // create a child iframe
-                const iframe = document.createElement("iframe");
-                iframe.style.width = config.width || "100%";
-                iframe.style.height = config.height || "100%";
-                iframe.src = config.src;
-                elem.appendChild(iframe);
-                elem = iframe;
-            }
         }
-
+        if (elem.tagName !== "IFRAME") {
+            // create a child iframe
+            const iframe = document.createElement("iframe");
+            iframe.style.width = config.width || "100%";
+            iframe.style.height = config.height || "100%";
+            iframe.src = config.src;
+            elem.appendChild(iframe);
+            elem = iframe;
+        }
         this.connections[ws + "/" + clientId].source = elem.contentWindow;
         let waitClientPromise;
 
