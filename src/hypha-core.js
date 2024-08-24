@@ -8,7 +8,7 @@ import * as redisClient from './utils/redis-mock';
 
 const connectToServer = hyphaWebsocketClient.connectToServer;
 const AUTH0_NAMESPACE = "https://api.imjoy.io/";
-class HyphaServer extends MessageEmitter {
+class HyphaCore extends MessageEmitter {
     static servers = {};
 
     constructor(config) {
@@ -35,6 +35,7 @@ class HyphaServer extends MessageEmitter {
             this.url = config.url || "https://local-hypha-server:" + this.port;
             this.wsUrl = this.url.replace("https://", "wss://").replace("http://", "ws://") + "/ws";
         }
+        this.api = null;
         this.server = null;
         this.workspaceManagerId = "workspace-manager";
         this.connections = {};
@@ -178,13 +179,14 @@ class HyphaServer extends MessageEmitter {
         }
     }
 
-    async start() {
-        if (HyphaServer.servers[this.url]) {
+    async start(config) {
+        config = config || {};
+        if (HyphaCore.servers[this.url]) {
             throw new Error(`Server already running at ${this.url}`);
         }
         else {
             this.server = new Server(this.wsUrl, { mock: false });
-            HyphaServer.servers[this.url] = this.server;
+            HyphaCore.servers[this.url] = this.server;
             this.messageHandler = this._handleClientMessage.bind(this);
             window.addEventListener("message", this.messageHandler);
             this.workspaceManager = new Workspace(this);
@@ -260,6 +262,19 @@ class HyphaServer extends MessageEmitter {
                 conn.emit_message(data);
             });
         });
+        config.server = this;
+        config.workspace = config.workspace || "default";
+        config.client_id = config.client_id || "default-client";
+        const api = await connectToServer(config);
+        this.api = api;
+        return api;
+    }
+
+    async connect(config){
+        config.server = this.server;
+        config.workspace = config.workspace || "default";
+        config.client_id = config.client_id || randId();
+        return await connectToServer(config);
     }
 
     async reset() {
@@ -273,7 +288,7 @@ class HyphaServer extends MessageEmitter {
         }
         window.removeEventListener("message", this.messageHandler);
         this.server.stop();
-        delete HyphaServer.servers[this.server.url];
+        delete HyphaCore.servers[this.server.url];
     }
 }
 
@@ -287,4 +302,4 @@ function parseJwt(token) {
     return JSON.parse(jsonPayload);
 }
 
-export { HyphaServer, connectToServer, imjoyRPC, hyphaWebsocketClient, WebSocket, Workspace, WebsocketRPCConnection };
+export { HyphaCore, connectToServer, imjoyRPC, hyphaWebsocketClient, WebSocket, Workspace, WebsocketRPCConnection };

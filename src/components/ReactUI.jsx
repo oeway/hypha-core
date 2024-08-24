@@ -5,7 +5,7 @@ import * as Babel from "@babel/standalone";
 import * as testingLibraryDom from "@testing-library/dom";
 import testingLibraryUserEvent from "@testing-library/user-event";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { Assertion } from "chai";
+import { Assertion, use } from "chai";
 import sourceMap from "source-map";
 import mocha from "mocha";
 import "mocha/mocha.css";
@@ -184,7 +184,14 @@ export default function ReactUI({onReady}) {
     let currentScript;
     const [component, setComponent] = useState(null);
     const [error, setError] = useState(null);
-    const { api } = React.useContext(HyphaContext);
+    const { core } = React.useContext(HyphaContext);
+    const [api, setApi] = useState(core ? core.api : null);
+    
+    useEffect(() => {
+        if(core && core.api){
+            setApi(core.api);
+        }
+    }, [core]);
 
     function testApp(testScript) {
         try {

@@ -15,13 +15,13 @@ export class Workspace {
     static tokens = {};
     static clients = {};
 
-    constructor(hyphaServer) {
-        this._server = hyphaServer;
-        this._redis = hyphaServer.redis;
-        this.connections = hyphaServer.connections;
-        this.eventBus = hyphaServer;
-        this.serverUrl = hyphaServer.url;
-        this.baseUrl = hyphaServer.baseUrl;
+    constructor(hyphaCore) {
+        this._server = hyphaCore;
+        this._redis = hyphaCore.redis;
+        this.connections = hyphaCore.connections;
+        this.eventBus = hyphaCore;
+        this.serverUrl = hyphaCore.url;
+        this.baseUrl = hyphaCore.baseUrl;
     }
 
     waitForClient(cid, timeout) {

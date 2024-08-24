@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { setupHyphaClients } from "./hypha-clients";
-import { HyphaServer, connectToServer } from "./hypha-core";
+import { HyphaCore } from "./hypha-core";
 import ReactUI from "./components/ReactUI";
 import HyphaContext from "./HyphaContext";
 
@@ -11,13 +11,12 @@ const MainApp = () => {
   const [activeSideIframe, setActiveSideIframe] = useState(null);
   const [mainWidth, setMainWidth] = useState(50); // Percentage of the main window width
   const [isDragging, setIsDragging] = useState(false);
-  const [hyphaServer, setHyphaServer] = useState(null);
-  const [hyphaApi, setHyphaApi] = useState(null);
+  const [hyphaCore, setHyphaCore] = useState(null);
   const [reactUI, setReactUI] = useState(null);
 
   useEffect(() => {
-    const hyphaServer = new HyphaServer();
-    hyphaServer.on("add_window", (config) => {
+    const hyphaCore = new HyphaCore();
+    hyphaCore.on("add_window", (config) => {
       const iframe = {
         src: config.src,
         id: config.window_id,
@@ -30,23 +29,19 @@ const MainApp = () => {
         setActiveSideIframe(iframe.id);
       }
     });
-    hyphaServer.start().then(() => {
+    hyphaCore.start().then(() => {
       const iframe = { src: "react-ui", id: "react-ui", name: "React UI"};
       setSideIframes((prev) => [...prev, iframe]);
       setActiveSideIframe(iframe.id);
-      setHyphaServer(hyphaServer);
-      connectToServer({ server: hyphaServer, workspace: "default", client_id: "default-client" }).then(api => {
-        // api will be set in the hypha context
-        setHyphaApi(api);
-      });
+      setHyphaCore(hyphaCore);
     });
   }, []);
 
   useEffect(() => {
-    if (hyphaApi) {
-      setupHyphaClients(hyphaApi);
+    if (hyphaCore) {
+      setupHyphaClients(hyphaCore);
     }
-  }, [hyphaApi]);
+  }, [hyphaCore]);
 
   const handleMouseDown = (e) => {
     e.preventDefault();
@@ -70,7 +65,7 @@ const MainApp = () => {
   };
 
   return (
-    <HyphaContext.Provider value={{server: hyphaServer, api: hyphaApi}}>
+    <HyphaContext.Provider value={{core: hyphaCore}}>
       <div className="w-screen h-screen flex flex-col">
       <nav className="bg-gray-800 text-white flex items-center justify-between p-4">
         <div className="flex items-center">

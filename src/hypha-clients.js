@@ -41,8 +41,8 @@ class HyphaApp():
 api.export(HyphaApp())
 </script>
 `
-export async function setupHyphaClients(api) {
-
+export async function setupHyphaClients(core) {
+    const api = core.api;
     // const uiDesigner = await api.getService(reactUI.id)
     // await uiDesigner.renderApp(`const {useState, useEffect} = React; const App = () => { return <div>Hello World!</div>; }; export default App;`);
 
@@ -128,7 +128,7 @@ export async function setupHyphaClients(api) {
     // await api.log("hi-api")
     // const token = await api.generateToken();
     // console.log("token:", token)
-    // const server2 = await hyphaWebsocketClient.connectToServer({"server_url": hyphaServer.url, "workspace": "ws-2", "client_id": "client-2", WebSocketClass: WebSocket})
+    // const server2 = await hyphaWebsocketClient.connectToServer({"server_url": hyphaCore.url, "workspace": "ws-2", "client_id": "client-2", WebSocketClass: WebSocket})
     // await server2.log("hi-server2")
 
     // assert(await api.echo("hello") === "hello", "echo failed")

@@ -6,7 +6,7 @@ declare module "hypha-core" {
   import { imjoyRPC } from "imjoy-rpc";
 
   export class Workspace {
-    constructor(server: HyphaServer);
+    constructor(server: HyphaCore);
 
     setup(config: {
       client_id: string;
@@ -36,7 +36,7 @@ declare module "hypha-core" {
 
   export class WebsocketRPCConnection {
     constructor(
-      server: HyphaServer,
+      server: HyphaCore,
       workspace: string,
       client_id: string,
       userInfo: any,
@@ -48,7 +48,7 @@ declare module "hypha-core" {
 
   export class RedisRPCConnection {
     constructor(
-      server: HyphaServer,
+      server: HyphaCore,
       workspace: string,
       client_id: string,
       userInfo: any,
@@ -123,8 +123,8 @@ declare module "hypha-core" {
     off: (event: string, handler: (...args: any[]) => void) => void;
   }
 
-  // HyphaServer
-  export class HyphaServer extends MessageEmitter {
+  // HyphaCore
+  export class HyphaCore extends MessageEmitter {
     static servers: { [url: string]: Server };
     redis: any;
     port: number;
@@ -145,8 +145,8 @@ declare module "hypha-core" {
       default_services?: { [key: string]: any };
     });
     api?: HyphaAPI;
-
-    start(): Promise<void>;
+    start(config?:ServerConfig ): Promise<HyphaAPI>;
+    connect(config: ServerConfig): Promise<HyphaAPI>;
     reset(): Promise<void>;
     close(): void;
   }
