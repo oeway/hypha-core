@@ -19,8 +19,11 @@ Hypha core is available as a ES module, you can import it in your HTML file like
         wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
     });
     const api = await hyphaCore.start();
-    
     // use api to interact with the server
+
+
+    // you can also create new connections to the server by calling:
+    // const api2 = await hyphaCore.connect();
 </script>
 ```
 

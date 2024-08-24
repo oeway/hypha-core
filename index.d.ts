@@ -146,7 +146,7 @@ declare module "hypha-core" {
     });
     api?: HyphaAPI;
     start(config?:ServerConfig ): Promise<HyphaAPI>;
-    connect(config: ServerConfig): Promise<HyphaAPI>;
+    connect(config?: ServerConfig): Promise<HyphaAPI>;
     reset(): Promise<void>;
     close(): void;
   }

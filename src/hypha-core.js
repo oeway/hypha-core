@@ -180,7 +180,6 @@ class HyphaCore extends MessageEmitter {
     }
 
     async start(config) {
-        config = config || {};
         if (HyphaCore.servers[this.url]) {
             throw new Error(`Server already running at ${this.url}`);
         }
@@ -262,6 +261,7 @@ class HyphaCore extends MessageEmitter {
                 conn.emit_message(data);
             });
         });
+        config = config || {};
         config.server = this;
         config.workspace = config.workspace || "default";
         config.client_id = config.client_id || "default-client";
@@ -271,7 +271,8 @@ class HyphaCore extends MessageEmitter {
     }
 
     async connect(config){
-        config.server = this.server;
+        config = config || {};
+        config.server = this;
         config.workspace = config.workspace || "default";
         config.client_id = config.client_id || randId();
         return await connectToServer(config);
