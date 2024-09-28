@@ -1,6 +1,6 @@
 {
   "name": "hypha-core",
-  "version": "0.20.37",
+  "version": "0.20.38",
   "description": "Hypha Core",
   "scripts": {
     "start": "webpack serve --mode=development",
@@ -40,7 +40,7 @@
     "autoprefixer": "^10.4.19",
     "buffer": "^6.0.3",
     "chai": "^4.3.4",
-    "hypha-rpc": "^0.20.37",
+    "hypha-rpc": "^0.20.38",
     "imjoy-rpc": "^0.5.59",
     "mocha": "^8.4.0",
     "mock-socket": "^9.3.1",

@@ -248,11 +248,12 @@ export class RedisRPCConnection {
      * @param {Object|Uint8Array} data - Data to send.
      */
     async emit_message(data) {
-        if (!(data instanceof Uint8Array)) {
-            throw new Error("Data must be bytes");
-        }
         if (this._stop) {
             throw new Error(`Connection has already been closed (client: ${this._workspace}/${this._clientId})`);
+        }
+        if (!(data instanceof Uint8Array)) {
+          console.log("Skipping text message", data)
+          return;
         }
         const decoder = new Decoder();
         const unpacker = decoder.decodeMulti(data);
