@@ -10,7 +10,7 @@ Hypha core is available as a ES module, you can import it in your HTML file like
 ```html
 <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
 <script type="module">
-    import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.44/dist/hypha-core.mjs";
+    import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.45/dist/hypha-core.mjs";
     const hyphaCore = new HyphaCore();
     hyphaCore.on("add_window", (config) => {
         const wb = new WinBox(config.name || config.src.slice(0, 128), {
