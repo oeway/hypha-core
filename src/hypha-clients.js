@@ -36,7 +36,7 @@ class HyphaApp():
         await api.log('initialized')
 
     async def run(self, ctx):
-        await api.alert('hello world.')
+        await api.alert('hello world from python')
 
 api.export(HyphaApp())
 </script>
