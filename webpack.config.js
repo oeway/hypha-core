@@ -40,7 +40,7 @@ const libConfigESM = {
         test: /\.[jt]sx?$/,
         loader: "esbuild-loader",
         options: {
-          target: "es2015",
+          target: "es2020",
         },
       },
     ],
@@ -48,7 +48,7 @@ const libConfigESM = {
   optimization: {
     minimizer: [
       new EsbuildPlugin({
-        target: "es2015",
+        target: "es2020",
         css: true,
         sourcemap: true,
       }),
@@ -90,7 +90,7 @@ const libConfigUMD = {
         include: path.resolve(__dirname, "src"), // Only compile files in the src folder
         loader: "esbuild-loader",
         options: {
-          target: "es2015",
+          target: "es2020",
         },
       },
     ],
@@ -98,7 +98,7 @@ const libConfigUMD = {
   optimization: {
     minimizer: [
       new EsbuildPlugin({
-        target: "es2015",
+        target: "es2020",
         css: true,
         sourcemap: true,
       }),
@@ -154,7 +154,7 @@ const appConfig = {
         test: /\.[jt]sx?$/,
         loader: "esbuild-loader",
         options: {
-          target: "es2015",
+          target: "es2020",
           loader: "jsx",
         },
       },
@@ -206,7 +206,7 @@ const appConfig = {
   optimization: {
     minimizer: [
       new EsbuildPlugin({
-        target: "es2015",
+        target: "es2020",
         css: true,
         sourcemap: true,
       }),
