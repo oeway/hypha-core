@@ -50,7 +50,7 @@ loadPyodide().then(async (pyodide) => {
     pyodide.setStderr({ batched: (msg) => console.error(msg) });
     await pyodide.loadPackage("micropip");
     const micropip = pyodide.pyimport("micropip");
-    await micropip.install('hypha-rpc==0.20.50');
+    await micropip.install('hypha-rpc==0.20.51');
     await pyodide.runPythonAsync(startupScript)
     console.log("Hypha Web Python initialized.");
 });
