@@ -248,6 +248,8 @@ const api = await hyphaCore.start({
 
 ### 2. Multiple Workspace Management
 
+Hypha Core supports multiple isolated workspaces for security and organization. Each workspace operates independently with its own service registry and access controls.
+
 ```javascript
 // Create and start the core server
 const hyphaCore = new HyphaCore();
@@ -267,127 +269,359 @@ const workspace2 = await hyphaCore.connect({
 // Each workspace operates independently
 await workspace1.registerService({
     name: "data-processor",
-    process: async (data) => {
+    config: {
+        require_context: true,
+        visibility: "public",
+    },
+    process: async (data, context) => {
+        // context.ws === "analysis-workspace"
+        console.log(`Processing data in workspace: ${context.ws}`);
         return data.map(x => x * 2);
     }
 });
 
 await workspace2.registerService({
     name: "chart-renderer",
-    render: async (data) => {
-        // Render chart logic
-        console.log("Rendering chart with data:", data);
+    config: {
+        require_context: true,
+        visibility: "public",
+    },
+    render: async (data, context) => {
+        // context.ws === "visualization-workspace"
+        console.log(`Rendering chart in workspace: ${context.ws}`);
+        return { chart: "rendered", workspace: context.ws };
     }
 });
 ```
 
-### 3. Custom Service Registration
+## Context Usage and Workspace Isolation
+
+### Understanding Context
+
+The `context` parameter is automatically injected into service methods when `require_context: true` is set in the service configuration. It provides essential information about the request origin and enables workspace-based security.
+
+#### Context Properties
 
 ```javascript
-const hyphaCore = new HyphaCore({
-    default_service: {
-        // Custom services available to all plugins
-        fileManager: {
-            async saveFile(filename, content, context) {
-                localStorage.setItem(filename, content);
-                console.log(`File saved by ${context.from}:`, filename);
-                return { success: true, filename };
-            },
-            
-            async loadFile(filename, context) {
-                const content = localStorage.getItem(filename);
-                console.log(`File loaded by ${context.from}:`, filename);
-                return content || null;
-            },
-            
-            async listFiles(context) {
-                const files = Object.keys(localStorage);
-                console.log(`Files listed by ${context.from}`);
-                return files;
-            }
-        },
-        
-        notificationService: {
-            async showNotification(message, type = 'info', context) {
-                console.log(`[${type.toUpperCase()}] ${message} (from: ${context.from})`);
-                return { success: true, timestamp: Date.now() };
-            }
+// Complete context object structure
+const context = {
+    ws: "workspace-name",           // Current workspace ID
+    from: "workspace/client-id",    // Source client identifier  
+    to: "workspace/service-id",     // Target service identifier
+    user: {                         // User information (if authenticated)
+        id: "user-id",
+        email: "user@example.com",
+        is_anonymous: false,
+        roles: ["admin", "user"],
+        expires_at: 1234567890
+    }
+};
+```
+
+### Workspace Isolation Examples
+
+#### 1. Data Access Control
+
+```javascript
+await api.registerService({
+    name: "secure-data-service",
+    config: {
+        require_context: true,
+        visibility: "protected",  // Only accessible within workspace
+    },
+    
+    async getData(query, context) {
+        // Validate workspace access
+        if (context.ws !== "authorized-workspace") {
+            throw new Error("Access denied: Invalid workspace");
         }
+        
+        // Log access for auditing
+        console.log(`Data access by ${context.from} in workspace ${context.ws}`);
+        
+        // Return workspace-specific data
+        return {
+            data: getWorkspaceData(context.ws),
+            workspace: context.ws,
+            requestedBy: context.from
+        };
+    },
+    
+    async saveData(data, context) {
+        // Ensure data is saved to correct workspace
+        const workspaceKey = `data:${context.ws}:${Date.now()}`;
+        
+        // Workspace-isolated storage
+        return await saveToWorkspaceStorage(workspaceKey, {
+            ...data,
+            workspace: context.ws,
+            savedBy: context.from,
+            timestamp: new Date().toISOString()
+        });
     }
 });
-
-window.hyphaCore = hyphaCore;
-const api = await hyphaCore.start();
 ```
 
-### 4. Event Handling and Monitoring
+#### 2. Cross-Workspace Communication Control
 
 ```javascript
-const hyphaCore = new HyphaCore();
-
-// Listen to various events
-hyphaCore.on("add_window", (config) => {
-    console.log("New window requested:", config);
+await api.registerService({
+    name: "workspace-bridge",
+    config: {
+        require_context: true,
+        visibility: "public",
+    },
+    
+    async sendToWorkspace(targetWorkspace, message, context) {
+        // Validate source workspace permissions
+        const allowedSources = ["admin-workspace", "bridge-workspace"];
+        if (!allowedSources.includes(context.ws)) {
+            throw new Error(`Workspace ${context.ws} not authorized for cross-workspace communication`);
+        }
+        
+        // Log cross-workspace communication
+        console.log(`Bridge: ${context.ws} → ${targetWorkspace}`, message);
+        
+        // Send message to target workspace
+        return await api.emit(`${targetWorkspace}:message`, {
+            from: context.ws,
+            fromClient: context.from,
+            message: message,
+            timestamp: Date.now()
+        });
+    },
+    
+    async listAuthorizedWorkspaces(context) {
+        // Return workspaces this client can access
+        const userWorkspaces = getUserWorkspaces(context.user?.id);
+        const currentWorkspace = context.ws;
+        
+        return {
+            current: currentWorkspace,
+            accessible: userWorkspaces,
+            requestedBy: context.from
+        };
+    }
 });
-
-hyphaCore.on("connection_ready", (connection) => {
-    console.log("Connection established:", connection);
-});
-
-// Custom event handling
-hyphaCore.on("service_added", (service) => {
-    console.log("New service registered:", service.name);
-});
-
-window.hyphaCore = hyphaCore;
-const api = await hyphaCore.start();
-
-// Emit custom events
-await hyphaCore.emit("custom_event", { message: "Hello World" });
 ```
 
-### 5. Error Handling Best Practices
+#### 3. User-Based Workspace Access
 
 ```javascript
-const hyphaCore = new HyphaCore();
-window.hyphaCore = hyphaCore;
+await api.registerService({
+    name: "user-workspace-manager",
+    config: {
+        require_context: true,
+        visibility: "public",
+    },
+    
+    async createUserWorkspace(workspaceName, context) {
+        // Only authenticated users can create workspaces
+        if (context.user?.is_anonymous) {
+            throw new Error("Anonymous users cannot create workspaces");
+        }
+        
+        // Prefix with user ID for isolation
+        const fullWorkspaceName = `user-${context.user.id}-${workspaceName}`;
+        
+        // Validate user permissions
+        if (!context.user.roles?.includes("workspace-creator")) {
+            throw new Error("Insufficient permissions to create workspace");
+        }
+        
+        console.log(`Creating workspace ${fullWorkspaceName} for user ${context.user.email}`);
+        
+        return {
+            workspace: fullWorkspaceName,
+            owner: context.user.id,
+            createdIn: context.ws,
+            permissions: ["read", "write", "admin"]
+        };
+    },
+    
+    async switchWorkspace(targetWorkspace, context) {
+        // Validate user can access target workspace
+        const userWorkspaces = await getUserAccessibleWorkspaces(context.user?.id);
+        
+        if (!userWorkspaces.includes(targetWorkspace)) {
+            throw new Error(`Access denied to workspace: ${targetWorkspace}`);
+        }
+        
+        // Log workspace switch for auditing
+        console.log(`User ${context.user?.email} switching: ${context.ws} → ${targetWorkspace}`);
+        
+        // Return connection config for new workspace
+        return {
+            workspace: targetWorkspace,
+            client_id: `${context.user?.id}-${Date.now()}`,
+            message: `Switched to workspace: ${targetWorkspace}`
+        };
+    }
+});
+```
 
-try {
-    const api = await hyphaCore.start();
+#### 4. Service Visibility and Access Control
+
+```javascript
+// Public service - accessible from any workspace
+await api.registerService({
+    name: "public-utility",
+    config: {
+        require_context: true,
+        visibility: "public",  // Accessible across workspaces
+    },
     
-    // Wait for API to be fully ready
-    if (!api) {
-        throw new Error("Failed to initialize Hypha Core API");
+    async getSystemInfo(context) {
+        return {
+            timestamp: Date.now(),
+            requestedFrom: context.ws,
+            client: context.from,
+            // Public information only
+            system: "Hypha Core v0.20.54"
+        };
+    }
+});
+
+// Protected service - only within same workspace
+await api.registerService({
+    name: "sensitive-operations",
+    config: {
+        require_context: true,
+        visibility: "protected",  // Same workspace only
+    },
+    
+    async processSecureData(data, context) {
+        // This service is only accessible from the same workspace
+        console.log(`Secure processing in workspace: ${context.ws}`);
+        
+        return {
+            processed: encryptData(data, context.ws),
+            workspace: context.ws,
+            security_level: "protected"
+        };
+    }
+});
+
+// Private service - only for specific clients
+await api.registerService({
+    name: "admin-only-service",
+    config: {
+        require_context: true,
+        visibility: "private",
+    },
+    
+    async adminOperation(params, context) {
+        // Check if user has admin role
+        if (!context.user?.roles?.includes("admin")) {
+            throw new Error("Admin access required");
+        }
+        
+        // Check if request comes from admin workspace
+        if (!context.ws.startsWith("admin-")) {
+            throw new Error("Must be called from admin workspace");
+        }
+        
+        console.log(`Admin operation by ${context.user.email} in ${context.ws}`);
+        
+        return {
+            operation: "completed",
+            admin: context.user.email,
+            workspace: context.ws
+        };
+    }
+});
+```
+
+### Security Best Practices with Context
+
+#### 1. Always Validate Context
+```javascript
+async function secureServiceMethod(data, context) {
+    // Validate required context properties
+    if (!context || !context.ws || !context.from) {
+        throw new Error("Invalid context: missing required properties");
     }
     
-    // Load plugin with error handling
-    try {
-        const plugin = await api.loadApp({ src: "https://example.com/plugin.js" });
-        await plugin.run({ config: {}, data: {} });
-    } catch (pluginError) {
-        console.error("Plugin loading failed:", pluginError);
-        // Continue execution, don't crash the app
+    // Validate workspace format
+    if (!/^[a-zA-Z0-9-_]+$/.test(context.ws)) {
+        throw new Error("Invalid workspace identifier");
     }
     
-} catch (coreError) {
-    console.error("Hypha Core initialization failed:", coreError);
+    // Continue with business logic...
 }
 ```
 
-## Required Template Files
+#### 2. Implement Audit Logging
+```javascript
+function logServiceAccess(serviceName, method, context, result) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        service: serviceName,
+        method: method,
+        workspace: context.ws,
+        client: context.from,
+        user: context.user?.id || "anonymous",
+        success: !result.error,
+        error: result.error?.message
+    };
+    
+    // Store audit log in workspace-specific location
+    storeAuditLog(`${context.ws}/audit.log`, logEntry);
+}
 
-For full functionality, serve these template files from your web server root:
-
-### File Structure
+await api.registerService({
+    name: "audited-service",
+    config: { require_context: true },
+    
+    async sensitiveOperation(data, context) {
+        try {
+            const result = await performOperation(data, context);
+            logServiceAccess("audited-service", "sensitiveOperation", context, result);
+            return result;
+        } catch (error) {
+            logServiceAccess("audited-service", "sensitiveOperation", context, { error });
+            throw error;
+        }
+    }
+});
 ```
-your-web-root/
-├── hypha-app-iframe.html      # Template for iframe-based apps
-├── hypha-app-webpython.js     # Template for Python-based apps  
-├── hypha-app-webworker.js     # Template for web worker apps
-└── your-app.html              # Your main application
+
+#### 3. Resource Isolation
+```javascript
+await api.registerService({
+    name: "resource-manager",
+    config: { require_context: true },
+    
+    async allocateResource(resourceType, context) {
+        // Create workspace-specific resource identifier
+        const resourceId = `${context.ws}-${resourceType}-${Date.now()}`;
+        
+        // Check workspace quotas
+        const currentUsage = await getWorkspaceResourceUsage(context.ws);
+        const quota = await getWorkspaceQuota(context.ws);
+        
+        if (currentUsage >= quota) {
+            throw new Error(`Workspace ${context.ws} has exceeded resource quota`);
+        }
+        
+        // Allocate resource with workspace isolation
+        return await allocateWorkspaceResource(resourceId, {
+            type: resourceType,
+            workspace: context.ws,
+            owner: context.from,
+            allocated_at: new Date().toISOString()
+        });
+    }
+});
 ```
 
-You can find these template files in the [`public`](./public) folder of this repository.
+This context-based approach ensures that:
+- **Workspace Isolation**: Services can enforce boundaries between workspaces
+- **Access Control**: Different visibility levels (public/protected/private) control service access
+- **User Authentication**: Context provides user information for authorization decisions
+- **Audit Trail**: All service calls include workspace and client information for logging
+- **Resource Management**: Resources can be allocated and tracked per workspace
+- **Security**: Malicious clients cannot access unauthorized workspaces or impersonate other clients
 
 ## Authentication
 
