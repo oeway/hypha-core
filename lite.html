@@ -7,54 +7,78 @@
 
     <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
     <script type="module">
-      import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.52/dist/hypha-core.mjs";
-      const hyphaCore = new HyphaCore();
-      hyphaCore.on("add_window", (config) => {
-        const wb = new WinBox(config.name || config.src.slice(0, 128), {
-          background: "#448aff",
+      import { HyphaCore } from "./hypha-core.mjs";
+      
+      try {
+        console.log("HyphaCore imported successfully");
+        
+        const hyphaCore = new HyphaCore();
+        console.log("HyphaCore instance created");
+        
+        // Expose hyphaCore globally for tests
+        window.hyphaCore = hyphaCore;
+        
+        hyphaCore.on("add_window", (config) => {
+          const wb = new WinBox(config.name || config.src.slice(0, 128), {
+            background: "#448aff",
+          });
+          wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
         });
-        wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
-      });
-      await hyphaCore.start();
+        
+        console.log("Starting HyphaCore...");
+        await hyphaCore.start();
+        console.log("HyphaCore started successfully, API:", hyphaCore.api);
 
-      const api = hyphaCore.api;
-      // Function to handle loading and running a plugin
-      async function loadAppFromUrl(url) {
-        const plugin = await api.loadApp({ src: url });
-        await plugin.run({ config: {}, data: {} });
-        console.log("Loaded and ran plugin from URL:", url);
-      }
-      window.loadApp = loadAppFromUrl;
-
-      // If url query contains plugin, load and run the plugin
-      const urlParams = new URLSearchParams(window.location.search);
-      const pluginUrls = urlParams.getAll("plugin");
-      for (const url of pluginUrls) {
-        await window.loadApp(url);
-      }
-
-      // Load plugin from menu
-      window.toggleDropdown = function () {
-        const dropdown = document.getElementById("dropdownMenu");
-        dropdown.style.display =
-          dropdown.style.display === "block" ? "none" : "block";
-      };
-
-      window.promptloadApp = async function () {
-        const url = prompt("Enter the plugin URL:");
-        if (url) {
-          await loadAppFromUrl(url);
+        const api = hyphaCore.api;
+        // Function to handle loading and running a plugin
+        async function loadAppFromUrl(url) {
+          const plugin = await api.loadApp({ src: url });
+          await plugin.run({ config: {}, data: {} });
+          console.log("Loaded and ran plugin from URL:", url);
         }
-      };
-      // Close the dropdown if the user clicks outside of it
-      window.onclick = function (event) {
-        if (!event.target.matches(".icon")) {
+        window.loadApp = loadAppFromUrl;
+
+        // If url query contains plugin, load and run the plugin
+        const urlParams = new URLSearchParams(window.location.search);
+        const pluginUrls = urlParams.getAll("plugin");
+        for (const url of pluginUrls) {
+          await window.loadApp(url);
+        }
+
+        // Load plugin from menu
+        window.toggleDropdown = function () {
           const dropdown = document.getElementById("dropdownMenu");
-          if (dropdown.style.display === "block") {
-            dropdown.style.display = "none";
+          dropdown.style.display =
+            dropdown.style.display === "block" ? "none" : "block";
+        };
+
+        window.promptloadApp = async function () {
+          const url = prompt("Enter the plugin URL:");
+          if (url) {
+            await loadAppFromUrl(url);
           }
+        };
+        // Close the dropdown if the user clicks outside of it
+        window.onclick = function (event) {
+          if (!event.target.matches(".icon")) {
+            const dropdown = document.getElementById("dropdownMenu");
+            if (dropdown.style.display === "block") {
+              dropdown.style.display = "none";
+            }
+          }
+        };
+        
+        // Initialize dropdown display style immediately
+        const dropdown = document.getElementById("dropdownMenu");
+        if (dropdown) {
+          dropdown.style.display = "none";
         }
-      };
+        
+        console.log("Initialization complete");
+      } catch (error) {
+        console.error("Error during initialization:", error);
+        window.initializationError = error;
+      }
     </script>
     <style>
       .icon-container {
