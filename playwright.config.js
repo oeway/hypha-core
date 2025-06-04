@@ -29,12 +29,20 @@ module.exports = {
         use: { browserName: 'webkit' },
       },
     ],
-    webServer: {
-      command: 'npm start -- --port 8080',
-      port: 8080,
-      timeout: 120 * 1000,
-      reuseExistingServer: !process.env.CI,
-    },
+    webServer: [
+      {
+        command: 'npm start -- --port 8080',
+        port: 8080,
+        timeout: 120 * 1000,
+        reuseExistingServer: !process.env.CI,
+      },
+      {
+        command: 'npm run serve:tests',
+        port: 3000,
+        timeout: 120 * 1000,
+        reuseExistingServer: !process.env.CI,
+      }
+    ],
     // Reporter configuration
     reporter: [
       ['list'], // Console output

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypha Core JWT Authentication Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #5a67d8;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f7fafc;
+        }
+        .section h3 {
+            color: #2d3748;
+            margin-top: 0;
+        }
+        button {
+            background: #5a67d8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #4c51bf;
+        }
+        button:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        .output {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .token-display {
+            background: #edf2f7;
+            border: 1px solid #cbd5e0;
+            padding: 10px;
+            border-radius: 5px;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+        .status.error {
+            background: #fed7d7;
+            color: #c53030;
+            border: 1px solid #feb2b2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Hypha Core JWT Authentication Demo</h1>
+        
+        <div class="section">
+            <h3>1. Initialize Hypha Core with JWT Secret</h3>
+            <div class="input-group">
+                <label for="jwtSecret">JWT Secret:</label>
+                <input type="text" id="jwtSecret" value="demo-secret-key-for-testing" />
+            </div>
+            <button onclick="initializeHyphaCore()">Initialize Hypha Core</button>
+            <div id="initStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>2. Generate JWT Token</h3>
+            <div class="input-group">
+                <label for="userId">User ID:</label>
+                <input type="text" id="userId" value="user123" />
+            </div>
+            <div class="input-group">
+                <label for="userEmail">Email:</label>
+                <input type="text" id="userEmail" value="user@example.com" />
+            </div>
+            <div class="input-group">
+                <label for="workspace">Workspace:</label>
+                <input type="text" id="workspace" value="demo-workspace" />
+            </div>
+            <div class="input-group">
+                <label for="roles">Roles (comma-separated):</label>
+                <input type="text" id="roles" value="user,admin" />
+            </div>
+            <div class="input-group">
+                <label for="expiresIn">Expires In (seconds):</label>
+                <input type="number" id="expiresIn" value="3600" />
+            </div>
+            <button onclick="generateToken()" id="generateBtn" disabled>Generate Token</button>
+            <div id="tokenOutput"></div>
+        </div>
+
+        <div class="section">
+            <h3>3. Connect with JWT Token</h3>
+            <button onclick="connectWithToken()" id="connectBtn" disabled>Connect with Token</button>
+            <div id="connectionStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>4. Test Service with Context</h3>
+            <button onclick="testService()" id="serviceBtn" disabled>Register & Call Service</button>
+            <div id="serviceOutput"></div>
+        </div>
+
+        <div class="section">
+            <h3>5. Console Output</h3>
+            <div class="output" id="console"></div>
+            <button onclick="clearConsole()">Clear Console</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.55/dist/hypha-core.mjs";
+        
+        let hyphaCore = null;
+        let api = null;
+        let currentToken = null;
+        let authenticatedApi = null;
+
+        // Expose functions globally
+        window.HyphaCore = HyphaCore;
+        window.hyphaCore = null;
+        window.api = null;
+        window.currentToken = null;
+        window.authenticatedApi = null;
+
+        function log(message, type = 'info') {
+            const console = document.getElementById('console');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#6b7280';
+            console.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function showStatus(elementId, message, isSuccess = true) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${isSuccess ? 'success' : 'error'}">${message}</div>`;
+        }
+
+        window.initializeHyphaCore = async function() {
+            try {
+                const jwtSecret = document.getElementById('jwtSecret').value;
+                if (!jwtSecret) {
+                    throw new Error('JWT Secret is required');
+                }
+
+                log('Initializing Hypha Core with JWT authentication...');
+                
+                hyphaCore = new HyphaCore({
+                    jwtSecret: jwtSecret,
+                    port: 8080 + Math.floor(Math.random() * 1000) // Random port to avoid conflicts
+                });
+
+                window.hyphaCore = hyphaCore;
+                
+                api = await hyphaCore.start({
+                    workspace: 'main-workspace',
+                    client_id: 'jwt-demo-client'
+                });
+
+                window.api = api;
+                
+                log('✅ Hypha Core initialized successfully!', 'success');
+                log(`Server running at: ${hyphaCore.url}`);
+                
+                showStatus('initStatus', '✅ Hypha Core initialized with JWT support', true);
+                
+                // Enable next step
+                document.getElementById('generateBtn').disabled = false;
+                
+            } catch (error) {
+                log(`❌ Initialization failed: ${error.message}`, 'error');
+                showStatus('initStatus', `❌ Failed to initialize: ${error.message}`, false);
+            }
+        };
+
+        window.generateToken = async function() {
+            try {
+                if (!api) {
+                    throw new Error('Please initialize Hypha Core first');
+                }
+
+                const userId = document.getElementById('userId').value;
+                const userEmail = document.getElementById('userEmail').value;
+                const workspace = document.getElementById('workspace').value;
+                const roles = document.getElementById('roles').value.split(',').map(r => r.trim());
+                const expiresIn = parseInt(document.getElementById('expiresIn').value);
+
+                log('Generating JWT token...');
+
+                currentToken = await api.generateToken({
+                    user_id: userId,
+                    email: userEmail,
+                    workspace: workspace,
+                    roles: roles,
+                    expires_in: expiresIn
+                });
+
+                window.currentToken = currentToken;
+
+                log('✅ Token generated successfully!', 'success');
+                
+                // Parse and display token info
+                const [header, payload, signature] = currentToken.split('.');
+                const decodedPayload = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+                
+                const tokenInfo = `
+<strong>Generated JWT Token:</strong>
+<div class="token-display">${currentToken}</div>
+
+<strong>Token Payload:</strong>
+<div class="output">${JSON.stringify(decodedPayload, null, 2)}</div>
+                `;
+                
+                document.getElementById('tokenOutput').innerHTML = tokenInfo;
+                
+                // Enable next step
+                document.getElementById('connectBtn').disabled = false;
+                
+            } catch (error) {
+                log(`❌ Token generation failed: ${error.message}`, 'error');
+                showStatus('tokenOutput', `❌ Failed to generate token: ${error.message}`, false);
+            }
+        };
+
+        window.connectWithToken = async function() {
+            try {
+                if (!currentToken) {
+                    throw new Error('Please generate a token first');
+                }
+
+                log('Connecting with JWT token...');
+
+                authenticatedApi = await hyphaCore.connect({
+                    token: currentToken,
+                    client_id: 'authenticated-client-' + Date.now()
+                });
+
+                window.authenticatedApi = authenticatedApi;
+
+                log('✅ Successfully connected with JWT token!', 'success');
+                log(`Client ID: ${authenticatedApi.clientId}`);
+                
+                showStatus('connectionStatus', '✅ Successfully authenticated with JWT token', true);
+                
+                // Enable next step
+                document.getElementById('serviceBtn').disabled = false;
+                
+            } catch (error) {
+                log(`❌ Authentication failed: ${error.message}`, 'error');
+                showStatus('connectionStatus', `❌ Authentication failed: ${error.message}`, false);
+            }
+        };
+
+        window.testService = async function() {
+            try {
+                if (!authenticatedApi) {
+                    throw new Error('Please connect with token first');
+                }
+
+                log('Registering service with context validation...');
+
+                // Register a service that requires context
+                await authenticatedApi.export({
+                    name: "jwt-demo-service",
+                    config: {
+                        require_context: true,
+                        visibility: "public"
+                    },
+                    
+                    async getUserInfo(data, context) {
+                        log(`Service called by: ${context.user?.email || 'anonymous'}`);
+                        return {
+                            message: "Hello from JWT-authenticated service!",
+                            user: {
+                                id: context.user?.id,
+                                email: context.user?.email,
+                                roles: context.user?.roles,
+                                workspace: context.ws
+                            },
+                            timestamp: new Date().toISOString()
+                        };
+                    },
+                    
+                    async checkPermissions(requiredRole, context) {
+                        const hasRole = context.user?.roles?.includes(requiredRole);
+                        return {
+                            hasPermission: hasRole,
+                            userRoles: context.user?.roles || [],
+                            requiredRole: requiredRole,
+                            message: hasRole ? 
+                                `✅ User has ${requiredRole} permission` : 
+                                `❌ User lacks ${requiredRole} permission`
+                        };
+                    }
+                });
+
+                log('✅ Service registered successfully!', 'success');
+
+                // Test the service
+                log('Testing service calls...');
+                
+                const service = await api.getService("jwt-demo-service");
+                
+                const userInfo = await service.getUserInfo({ test: "data" });
+                log('📋 User info retrieved:', 'success');
+                
+                const adminCheck = await service.checkPermissions("admin");
+                const userCheck = await service.checkPermissions("user");
+                
+                const serviceOutput = `
+<strong>Service Test Results:</strong>
+<div class="output"><strong>User Info:</strong>
+${JSON.stringify(userInfo, null, 2)}
+
+<strong>Admin Permission Check:</strong>
+${JSON.stringify(adminCheck, null, 2)}
+
+<strong>User Permission Check:</strong>
+${JSON.stringify(userCheck, null, 2)}</div>
+                `;
+                
+                document.getElementById('serviceOutput').innerHTML = serviceOutput;
+                log('✅ All service tests completed!', 'success');
+                
+            } catch (error) {
+                log(`❌ Service test failed: ${error.message}`, 'error');
+                showStatus('serviceOutput', `❌ Service test failed: ${error.message}`, false);
+            }
+        };
+
+        window.clearConsole = function() {
+            document.getElementById('console').innerHTML = '';
+        };
+
+        // Initial log
+        log('🚀 JWT Authentication Demo loaded. Click "Initialize Hypha Core" to begin.');
+    </script>
+</body>
+</html> 

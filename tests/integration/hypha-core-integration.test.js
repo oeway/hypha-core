@@ -47,8 +47,31 @@ test.describe('HyphaCore Integration Tests', () => {
 
     test.describe('Core Initialization', () => {
         test('should initialize HyphaCore successfully', async ({ page }) => {
+            // Capture console logs
+            const logs = [];
+            page.on('console', msg => {
+                logs.push(`${msg.type()}: ${msg.text()}`);
+                console.log(`Browser console ${msg.type()}: ${msg.text()}`);
+            });
+            
+            // Capture page errors
+            page.on('pageerror', error => {
+                console.log(`Page error: ${error.message}`);
+                logs.push(`error: ${error.message}`);
+            });
+            
             // Wait for HyphaCore to be available
             await page.waitForFunction(() => window.hyphaCore !== undefined);
+            
+            // Check what state we're in
+            const status = await page.evaluate(() => {
+                return {
+                    hyphaCore: !!window.hyphaCore,
+                    api: window.hyphaCore ? window.hyphaCore.api : 'no hyphaCore',
+                    error: window.initializationError ? window.initializationError.message : null
+                };
+            });
+            console.log('Current status:', status);
             
             // Wait for the API to be initialized (after start() completes)
             await page.waitForFunction(() => window.hyphaCore && window.hyphaCore.api !== null, { timeout: 10000 });
@@ -58,6 +81,7 @@ test.describe('HyphaCore Integration Tests', () => {
                 return window.hyphaCore && window.hyphaCore.api;
             });
             
+            console.log('Console logs captured:', logs);
             expect(isInitialized).toBeTruthy();
         });
 

@@ -4,3 +4,4 @@ dist/main.js
 dist/
 test-results/
 .vscode/
+playwright-report/*

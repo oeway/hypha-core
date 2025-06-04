@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypha Core Integration Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #fafafa;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #34495e;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.pending {
+            background: #f39c12;
+            color: white;
+        }
+        .status.success {
+            background: #27ae60;
+            color: white;
+        }
+        .status.error {
+            background: #e74c3c;
+            color: white;
+        }
+        .log {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 200px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+        .results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .test-results {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .error-details {
+            color: #e74c3c;
+            font-family: monospace;
+            background: #fdf2f2;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Hypha Core Integration Tests</h1>
+        <p>Comprehensive testing of all HyphaCore functionality as described in the README.</p>
+        
+        <div class="test-section">
+            <h3>Test Controls</h3>
+            <button onclick="runAllTests()">🚀 Run All Tests</button>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+            <button onclick="runSpecificTest('basic')">🔧 Basic Setup</button>
+            <button onclick="runSpecificTest('auth')">🔐 Authentication</button>
+            <button onclick="runSpecificTest('services')">⚡ Services</button>
+            <button onclick="runSpecificTest('worker')">👷 WebWorker</button>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 Test Status Overview</h3>
+            <div id="test-overview">
+                <div>1. Basic HyphaCore Setup <span id="status-basic" class="status pending">PENDING</span></div>
+                <div>2. JWT Authentication System <span id="status-auth" class="status pending">PENDING</span></div>
+                <div>3. Service Registration & Communication <span id="status-services" class="status pending">PENDING</span></div>
+                <div>4. WebWorker Integration <span id="status-worker" class="status pending">PENDING</span></div>
+                <div>5. Cross-Workspace Security <span id="status-security" class="status pending">PENDING</span></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Test Execution Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+
+        <div class="results">
+            <div class="test-results">
+                <h4>✅ Successful Tests</h4>
+                <div id="success-results"></div>
+            </div>
+            <div class="test-results">
+                <h4>❌ Failed Tests</h4>
+                <div id="error-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { HyphaCore } from './hypha-core.mjs';
+
+        // Expose HyphaCore globally for Playwright tests immediately
+        window.HyphaCore = HyphaCore;
+        
+        // Set a ready flag for tests to know when the module is loaded
+        window.hyphaModuleReady = true;
+
+        // Test state management
+        let hyphaCore = null;
+        let rootApi = null;
+        let clientApi = null;
+        let workerApi = null;
+        let testWorker = null;
+
+        // Logging utilities
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('log');
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warn' ? '⚠️' : 'ℹ️';
+            logElement.innerHTML += `[${timestamp}] ${prefix} ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+
+        function updateStatus(testId, status) {
+            const statusElement = document.getElementById(`status-${testId}`);
+            if (statusElement) {
+                statusElement.className = `status ${status}`;
+                statusElement.textContent = status.toUpperCase();
+            }
+        }
+
+        function addResult(testName, success, details = '') {
+            const container = success ? 'success-results' : 'error-results';
+            const resultElement = document.getElementById(container);
+            const div = document.createElement('div');
+            div.innerHTML = `
+                <strong>${testName}</strong>
+                ${details ? `<div class="error-details">${details}</div>` : ''}
+            `;
+            resultElement.appendChild(div);
+        }
+
+        // Test 1: Basic HyphaCore Setup
+        async function testBasicSetup() {
+            log('🔧 Starting Basic HyphaCore Setup Test...');
+            updateStatus('basic', 'pending');
+
+            try {
+                // Step 1: Create HyphaCore instance
+                log('Step 1: Creating HyphaCore instance...');
+                hyphaCore = new HyphaCore({
+                    jwtSecret: 'test-integration-secret-key-2024',
+                    port: 8080 + Math.floor(Math.random() * 1000) // Random port to avoid conflicts
+                });
+                
+                log(`✓ HyphaCore created with URL: ${hyphaCore.url}`);
+                log(`✓ WebSocket URL: ${hyphaCore.wsUrl}`);
+                log(`✓ JWT Secret configured: ${hyphaCore.jwtSecret ? 'Yes' : 'No'}`);
+
+                // Step 2: Start the server
+                log('Step 2: Starting HyphaCore server...');
+                rootApi = await hyphaCore.start();
+                
+                log('✓ Server started successfully');
+                log(`✓ Root API obtained with methods: ${Object.keys(rootApi).filter(k => typeof rootApi[k] === 'function').join(', ')}`);
+
+                // Step 3: Verify API methods
+                const requiredMethods = ['generateToken', 'registerService', 'getService', 'listServices'];
+                const availableMethods = Object.keys(rootApi).filter(k => typeof rootApi[k] === 'function');
+                
+                for (const method of requiredMethods) {
+                    if (!availableMethods.includes(method)) {
+                        throw new Error(`Required method ${method} not found in root API`);
+                    }
+                }
+                
+                log('✓ All required API methods verified');
+                
+                updateStatus('basic', 'success');
+                addResult('Basic HyphaCore Setup', true);
+                log('🎉 Basic setup test completed successfully!', 'success');
+                return true;
+
+            } catch (error) {
+                log(`❌ Basic setup test failed: ${error.message}`, 'error');
+                updateStatus('basic', 'error');
+                addResult('Basic HyphaCore Setup', false, error.message);
+                return false;
+            }
+        }
+
+        // Test 2: JWT Authentication System
+        async function testAuthentication() {
+            log('🔐 Starting JWT Authentication Test...');
+            updateStatus('auth', 'pending');
+
+            try {
+                if (!rootApi) {
+                    throw new Error('Root API not available - run basic setup first');
+                }
+
+                // Step 1: Generate JWT token
+                log('Step 1: Generating JWT token...');
+                const token = await rootApi.generateToken({
+                    user_id: 'test-user-123',
+                    workspace: 'test-workspace',
+                    email: 'test@example.com',
+                    roles: ['user', 'tester'],
+                    expires_in: 3600
+                });
+
+                log('✓ JWT token generated successfully');
+                log(`✓ Token length: ${token.length} characters`);
+                
+                // Verify JWT structure
+                const tokenParts = token.split('.');
+                if (tokenParts.length !== 3) {
+                    throw new Error(`Invalid JWT structure: expected 3 parts, got ${tokenParts.length}`);
+                }
+                
+                log('✓ JWT has correct structure (header.payload.signature)');
+
+                // Step 2: Decode and verify payload
+                const payload = JSON.parse(atob(tokenParts[1]));
+                log(`✓ Token payload decoded: ${JSON.stringify(payload, null, 2)}`);
+                
+                if (payload.sub !== 'test-user-123') {
+                    throw new Error(`Expected subject 'test-user-123', got '${payload.sub}'`);
+                }
+                
+                if (payload.workspace !== 'test-workspace') {
+                    throw new Error(`Expected workspace 'test-workspace', got '${payload.workspace}'`);
+                }
+
+                log('✓ Token payload verified');
+
+                // Step 3: Connect using token
+                log('Step 2: Connecting client with JWT token...');
+                clientApi = await hyphaCore.connect({
+                    token: token,
+                    client_id: 'test-client-001',
+                    workspace: 'test-workspace'
+                });
+
+                log('✓ Client connected successfully with JWT token');
+                log(`✓ Client API methods: ${Object.keys(clientApi).filter(k => typeof clientApi[k] === 'function').join(', ')}`);
+
+                // Step 4: Test cross-workspace access control
+                log('Step 3: Testing workspace access controls...');
+                
+                try {
+                    await clientApi.generateToken({
+                        workspace: 'unauthorized-workspace'
+                    });
+                    throw new Error('Expected access denied error but token was generated');
+                } catch (accessError) {
+                    if (accessError.message.includes('Access denied')) {
+                        log('✓ Cross-workspace access properly denied');
+                    } else {
+                        throw accessError;
+                    }
+                }
+
+                // Step 5: Test same-workspace token generation
+                log('Step 4: Testing same-workspace token generation...');
+                const sameWorkspaceToken = await clientApi.generateToken({
+                    user_id: 'assistant-user',
+                    workspace: 'test-workspace'
+                });
+
+                log('✓ Same-workspace token generated successfully');
+                
+                const assistantPayload = JSON.parse(atob(sameWorkspaceToken.split('.')[1]));
+                if (assistantPayload.workspace !== 'test-workspace') {
+                    throw new Error('Same-workspace token has incorrect workspace');
+                }
+
+                updateStatus('auth', 'success');
+                addResult('JWT Authentication System', true);
+                log('🎉 Authentication test completed successfully!', 'success');
+                return true;
+
+            } catch (error) {
+                log(`❌ Authentication test failed: ${error.message}`, 'error');
+                updateStatus('auth', 'error');
+                addResult('JWT Authentication System', false, error.message);
+                return false;
+            }
+        }
+
+        // Test 3: Service Registration & Communication
+        async function testServices() {
+            log('⚡ Starting Service Registration Test...');
+            updateStatus('services', 'pending');
+
+            try {
+                if (!rootApi || !clientApi) {
+                    throw new Error('APIs not available - run previous tests first');
+                }
+
+                // Step 1: Register service with root API
+                log('Step 1: Registering service with root API...');
+                await rootApi.registerService({
+                    id: 'math-service:v1',
+                    name: 'Mathematical Operations Service',
+                    description: 'A service that performs mathematical operations',
+                    config: {
+                        require_context: true,
+                        visibility: 'public'
+                    },
+                    overwrite: true,
+                    add: function(a, b, context) {
+                        log(`Math service: Adding ${a} + ${b} (called from ${context?.from || 'unknown'})`);
+                        return a + b;
+                    },
+                    multiply: function(a, b, context) {
+                        log(`Math service: Multiplying ${a} * ${b} (called from ${context?.from || 'unknown'})`);
+                        return a * b;
+                    },
+                    getWorkspaceInfo: function(context) {
+                        return {
+                            workspace: context?.ws || 'unknown',
+                            caller: context?.from || 'unknown',
+                            timestamp: new Date().toISOString()
+                        };
+                    }
+                });
+
+                log('✓ Math service registered successfully');
+
+                // Step 2: Register service with client API
+                log('Step 2: Registering client service...');
+                await clientApi.registerService({
+                    id: 'string-service:v1',
+                    name: 'String Operations Service',
+                    config: {
+                        require_context: true,
+                        visibility: 'protected' // Only within same workspace
+                    },
+                    overwrite: true,
+                    reverse: function(str, context) {
+                        log(`String service: Reversing "${str}" (workspace: ${context?.ws})`);
+                        return str.split('').reverse().join('');
+                    },
+                    uppercase: function(str, context) {
+                        log(`String service: Converting "${str}" to uppercase`);
+                        return str.toUpperCase();
+                    }
+                });
+
+                log('✓ String service registered successfully');
+
+                // Step 3: List services
+                log('Step 3: Listing available services...');
+                const services = await clientApi.listServices();
+                log(`✓ Found ${services.length} services`);
+                
+                for (const service of services) {
+                    log(`  - ${service.name} (${service.id})`);
+                }
+
+                // Step 4: Get and call math service
+                log('Step 4: Getting and calling math service...');
+                const mathService = await clientApi.getService('math-service:v1');
+                
+                if (!mathService) {
+                    throw new Error('Math service not found');
+                }
+
+                log('✓ Math service retrieved');
+
+                // Test math operations
+                const sum = await mathService.add(15, 27);
+                log(`✓ Math service add(15, 27) = ${sum}`);
+                
+                if (sum !== 42) {
+                    throw new Error(`Expected 42, got ${sum}`);
+                }
+
+                const product = await mathService.multiply(6, 7);
+                log(`✓ Math service multiply(6, 7) = ${product}`);
+                
+                if (product !== 42) {
+                    throw new Error(`Expected 42, got ${product}`);
+                }
+
+                const workspaceInfo = await mathService.getWorkspaceInfo();
+                log(`✓ Workspace info: ${JSON.stringify(workspaceInfo)}`);
+
+                // Step 5: Get and call string service
+                log('Step 5: Testing string service...');
+                const stringService = await clientApi.getService('string-service:v1');
+                
+                if (!stringService) {
+                    throw new Error('String service not found');
+                }
+
+                const reversed = await stringService.reverse('Hello World');
+                log(`✓ String service reverse("Hello World") = "${reversed}"`);
+                
+                if (reversed !== 'dlroW olleH') {
+                    throw new Error(`Expected "dlroW olleH", got "${reversed}"`);
+                }
+
+                const uppercase = await stringService.uppercase('integration test');
+                log(`✓ String service uppercase("integration test") = "${uppercase}"`);
+                
+                if (uppercase !== 'INTEGRATION TEST') {
+                    throw new Error(`Expected "INTEGRATION TEST", got "${uppercase}"`);
+                }
+
+                updateStatus('services', 'success');
+                addResult('Service Registration & Communication', true);
+                log('🎉 Service registration test completed successfully!', 'success');
+                return true;
+
+            } catch (error) {
+                log(`❌ Service registration test failed: ${error.message}`, 'error');
+                updateStatus('services', 'error');
+                addResult('Service Registration & Communication', false, error.message);
+                return false;
+            }
+        }
+
+        // Test 4: WebWorker Integration
+        async function testWebWorker() {
+            log('👷 Starting WebWorker Integration Test...');
+            updateStatus('worker', 'pending');
+
+            try {
+                if (!rootApi) {
+                    throw new Error('Root API not available - run basic setup first');
+                }
+
+                // Step 1: Create worker blob with Hypha integration
+                log('Step 1: Creating WebWorker with Hypha integration...');
+                
+                // Option 1: Use dedicated worker file
+                try {
+                    testWorker = new Worker('./test-worker.js');
+                } catch (workerError) {
+                    log('⚠️ Failed to load dedicated worker file, falling back to inline worker...');
+                    
+                    // Option 2: Fallback to inline worker
+                    const workerCode = `
+                        // Import HyphaCore dependencies for worker
+                        importScripts("https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.55/dist/hypha-rpc-websocket.min.js");
+                        
+                        console.log('Worker: Starting Hypha client setup...');
+                        
+                        // Setup worker as Hypha client
+                        hyphaWebsocketClient.setupLocalClient({
+                            enable_execution: true,
+                            server_url: '${hyphaCore.wsUrl}'
+                        }).then(async (api) => {
+                            console.log('Worker: Hypha client initialized', api);
+                            
+                            // Register worker service
+                            await api.export({
+                                id: 'worker-compute:v1',
+                                name: 'Worker Computation Service',
+                                description: 'CPU-intensive computations in WebWorker',
+                                
+                                // Heavy computation that benefits from worker isolation
+                                fibonacci: function(n) {
+                                    console.log('Worker: Computing fibonacci(' + n + ')');
+                                    if (n <= 1) return n;
+                                    let a = 0, b = 1;
+                                    for (let i = 2; i <= n; i++) {
+                                        [a, b] = [b, a + b];
+                                    }
+                                    return b;
+                                },
+                                
+                                // Prime number checking
+                                isPrime: function(n) {
+                                    console.log('Worker: Checking if ' + n + ' is prime');
+                                    if (n <= 1) return false;
+                                    if (n <= 3) return true;
+                                    if (n % 2 === 0 || n % 3 === 0) return false;
+                                    for (let i = 5; i * i <= n; i += 6) {
+                                        if (n % i === 0 || n % (i + 2) === 0) return false;
+                                    }
+                                    return true;
+                                },
+                                
+                                // Array processing
+                                processArray: function(arr, operation) {
+                                    console.log('Worker: Processing array with operation:', operation);
+                                    switch(operation) {
+                                        case 'sum':
+                                            return arr.reduce((a, b) => a + b, 0);
+                                        case 'product':
+                                            return arr.reduce((a, b) => a * b, 1);
+                                        case 'max':
+                                            return Math.max(...arr);
+                                        case 'min':
+                                            return Math.min(...arr);
+                                        default:
+                                            throw new Error('Unknown operation: ' + operation);
+                                    }
+                                },
+                                
+                                // Worker status
+                                getStatus: function() {
+                                    return {
+                                        type: 'webworker',
+                                        timestamp: new Date().toISOString(),
+                                        location: 'WebWorker Thread',
+                                        capabilities: ['fibonacci', 'isPrime', 'processArray']
+                                    };
+                                }
+                            });
+                            
+                            console.log('Worker: Services registered successfully');
+                            
+                            // Notify main thread that worker is ready
+                            self.postMessage({ type: 'worker_ready', message: 'Worker services registered' });
+                            
+                        }).catch(error => {
+                            console.error('Worker: Failed to setup Hypha client:', error);
+                            self.postMessage({ type: 'worker_error', error: error.message });
+                        });
+                        
+                        // Handle messages from main thread
+                        self.onmessage = function(event) {
+                            console.log('Worker: Received message:', event.data);
+                            if (event.data.type === 'ping') {
+                                self.postMessage({ type: 'pong', message: 'Worker is alive' });
+                            }
+                        };
+                    `;
+
+                    const blob = new Blob([workerCode], { type: 'application/javascript' });
+                    const workerUrl = URL.createObjectURL(blob);
+                    testWorker = new Worker(workerUrl);
+                }
+
+                // Step 2: Wait for worker to be ready
+                log('Step 2: Waiting for worker initialization...');
+                
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Worker initialization timeout'));
+                    }, 10000);
+
+                    testWorker.onmessage = (event) => {
+                        if (event.data.type === 'worker_ready') {
+                            clearTimeout(timeout);
+                            log('✓ Worker initialized and services registered');
+                            resolve();
+                        } else if (event.data.type === 'worker_error') {
+                            clearTimeout(timeout);
+                            reject(new Error('Worker error: ' + event.data.error));
+                        }
+                    };
+
+                    testWorker.onerror = (error) => {
+                        clearTimeout(timeout);
+                        reject(new Error('Worker creation failed: ' + error.message));
+                    };
+                });
+
+                // Step 3: Get worker service from main thread
+                log('Step 3: Getting worker service from main thread...');
+                
+                // Wait a bit for service registration to propagate
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                let workerService = await rootApi.getService('computational-services:v1');
+                
+                if (!workerService) {
+                    // Try fallback service ID for inline worker
+                    workerService = await rootApi.getService('worker-compute:v1');
+                    if (!workerService) {
+                        throw new Error('Neither dedicated nor fallback worker service found');
+                    }
+                    log('✓ Using fallback inline worker service');
+                } else {
+                    log('✓ Using dedicated test-worker.js service');
+                }
+
+                log('✓ Worker service retrieved from main thread');
+
+                // Step 4: Test worker computations
+                log('Step 4: Testing worker computations...');
+
+                // Test Fibonacci
+                const fib10 = await workerService.fibonacci(10);
+                log(`✓ Worker fibonacci(10) = ${fib10}`);
+                if (fib10 !== 55) {
+                    throw new Error(`Expected 55, got ${fib10}`);
+                }
+
+                // Test prime checking
+                const isPrime17 = await workerService.isPrime(17);
+                log(`✓ Worker isPrime(17) = ${isPrime17}`);
+                if (isPrime17 !== true) {
+                    throw new Error(`Expected true, got ${isPrime17}`);
+                }
+
+                const isPrime18 = await workerService.isPrime(18);
+                log(`✓ Worker isPrime(18) = ${isPrime18}`);
+                if (isPrime18 !== false) {
+                    throw new Error(`Expected false, got ${isPrime18}`);
+                }
+
+                // Test array processing
+                const testArray = [1, 2, 3, 4, 5];
+                const arraySum = await workerService.processArray(testArray, 'sum');
+                log(`✓ Worker processArray([1,2,3,4,5], 'sum') = ${arraySum}`);
+                if (arraySum !== 15) {
+                    throw new Error(`Expected 15, got ${arraySum}`);
+                }
+
+                const arrayMax = await workerService.processArray(testArray, 'max');
+                log(`✓ Worker processArray([1,2,3,4,5], 'max') = ${arrayMax}`);
+                if (arrayMax !== 5) {
+                    throw new Error(`Expected 5, got ${arrayMax}`);
+                }
+
+                // Test worker status
+                const workerStatus = await workerService.getStatus();
+                log(`✓ Worker status: ${JSON.stringify(workerStatus)}`);
+
+                if (workerStatus.type !== 'webworker') {
+                    throw new Error(`Expected type 'webworker', got '${workerStatus.type}'`);
+                }
+
+                updateStatus('worker', 'success');
+                addResult('WebWorker Integration', true);
+                log('🎉 WebWorker integration test completed successfully!', 'success');
+                return true;
+
+            } catch (error) {
+                log(`❌ WebWorker integration test failed: ${error.message}`, 'error');
+                updateStatus('worker', 'error');
+                addResult('WebWorker Integration', false, error.message);
+                return false;
+            }
+        }
+
+        // Test 5: Cross-Workspace Security
+        async function testSecurity() {
+            log('🔒 Starting Cross-Workspace Security Test...');
+            updateStatus('security', 'pending');
+
+            try {
+                if (!rootApi) {
+                    throw new Error('Root API not available - run basic setup first');
+                }
+
+                // Step 1: Create multiple workspace tokens
+                log('Step 1: Creating multiple workspace tokens...');
+                
+                const alphaToken = await rootApi.generateToken({
+                    user_id: 'alpha-user',
+                    workspace: 'workspace-alpha',
+                    roles: ['user']
+                });
+
+                const betaToken = await rootApi.generateToken({
+                    user_id: 'beta-user', 
+                    workspace: 'workspace-beta',
+                    roles: ['user']
+                });
+
+                log('✓ Multiple workspace tokens created');
+
+                // Step 2: Connect clients to different workspaces
+                log('Step 2: Connecting clients to different workspaces...');
+                
+                const alphaClient = await hyphaCore.connect({
+                    token: alphaToken,
+                    client_id: 'alpha-client',
+                    workspace: 'workspace-alpha'
+                });
+
+                const betaClient = await hyphaCore.connect({
+                    token: betaToken,
+                    client_id: 'beta-client', 
+                    workspace: 'workspace-beta'
+                });
+
+                log('✓ Multi-workspace clients connected');
+
+                // Step 3: Register workspace-specific services
+                log('Step 3: Registering workspace-specific services...');
+                
+                await alphaClient.registerService({
+                    id: 'alpha-secret:v1',
+                    name: 'Alpha Secret Service',
+                    config: {
+                        require_context: true,
+                        visibility: 'protected' // Only within workspace-alpha
+                    },
+                    overwrite: true,
+                    getSecret: function(context) {
+                        return {
+                            secret: 'alpha-classified-data',
+                            workspace: context.ws,
+                            timestamp: new Date().toISOString()
+                        };
+                    }
+                });
+
+                await betaClient.registerService({
+                    id: 'beta-secret:v1',
+                    name: 'Beta Secret Service', 
+                    config: {
+                        require_context: true,
+                        visibility: 'protected' // Only within workspace-beta
+                    },
+                    overwrite: true,
+                    getSecret: function(context) {
+                        return {
+                            secret: 'beta-classified-data',
+                            workspace: context.ws,
+                            timestamp: new Date().toISOString()
+                        };
+                    }
+                });
+
+                log('✓ Workspace-specific secret services registered');
+
+                // Step 4: Test workspace isolation
+                log('Step 4: Testing workspace isolation...');
+
+                // Alpha client should access alpha service
+                const alphaService = await alphaClient.getService('alpha-secret:v1');
+                if (!alphaService) {
+                    throw new Error('Alpha client cannot access its own service');
+                }
+
+                const alphaSecret = await alphaService.getSecret();
+                log(`✓ Alpha client accessed alpha secret: ${alphaSecret.secret}`);
+
+                // Beta client should access beta service
+                const betaService = await betaClient.getService('beta-secret:v1');
+                if (!betaService) {
+                    throw new Error('Beta client cannot access its own service');
+                }
+
+                const betaSecret = await betaService.getSecret();
+                log(`✓ Beta client accessed beta secret: ${betaSecret.secret}`);
+
+                // Step 5: Test cross-workspace access denial
+                log('Step 5: Testing cross-workspace access denial...');
+
+                try {
+                    await alphaClient.getService('beta-secret:v1');
+                    throw new Error('Alpha client should not access beta service');
+                } catch (accessError) {
+                    if (accessError.message.includes('not access beta service')) {
+                        throw accessError; // This should not happen
+                    }
+                    log('✓ Alpha client properly denied access to beta service');
+                }
+
+                try {
+                    await betaClient.getService('alpha-secret:v1');
+                    throw new Error('Beta client should not access alpha service');
+                } catch (accessError) {
+                    if (accessError.message.includes('not access alpha service')) {
+                        throw accessError; // This should not happen
+                    }
+                    log('✓ Beta client properly denied access to alpha service');
+                }
+
+                // Step 6: Test token generation restrictions
+                log('Step 6: Testing token generation restrictions...');
+
+                try {
+                    await alphaClient.generateToken({
+                        workspace: 'workspace-beta' // Cross-workspace attempt
+                    });
+                    throw new Error('Alpha client should not generate beta workspace tokens');
+                } catch (tokenError) {
+                    if (tokenError.message.includes('Access denied')) {
+                        log('✓ Cross-workspace token generation properly denied');
+                    } else {
+                        throw tokenError;
+                    }
+                }
+
+                updateStatus('security', 'success');
+                addResult('Cross-Workspace Security', true);
+                log('🎉 Cross-workspace security test completed successfully!', 'success');
+                return true;
+
+            } catch (error) {
+                log(`❌ Cross-workspace security test failed: ${error.message}`, 'error');
+                updateStatus('security', 'error');
+                addResult('Cross-Workspace Security', false, error.message);
+                return false;
+            }
+        }
+
+        // Main test orchestration
+        async function runAllTests() {
+            log('🚀 Starting Comprehensive Integration Tests...');
+            log('='.repeat(50));
+            
+            // Clear previous results
+            document.getElementById('success-results').innerHTML = '';
+            document.getElementById('error-results').innerHTML = '';
+
+            const tests = [
+                { name: 'Basic Setup', fn: testBasicSetup },
+                { name: 'Authentication', fn: testAuthentication },
+                { name: 'Services', fn: testServices },
+                { name: 'WebWorker', fn: testWebWorker },
+                { name: 'Security', fn: testSecurity }
+            ];
+
+            let passed = 0;
+            let failed = 0;
+
+            for (const test of tests) {
+                try {
+                    log(`\n🔄 Running ${test.name} test...`);
+                    const success = await test.fn();
+                    if (success) {
+                        passed++;
+                    } else {
+                        failed++;
+                    }
+                } catch (error) {
+                    log(`💥 Test ${test.name} threw exception: ${error.message}`, 'error');
+                    failed++;
+                }
+                
+                // Small delay between tests
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            log('\n' + '='.repeat(50));
+            log(`🏁 All tests completed! Passed: ${passed}, Failed: ${failed}`);
+            
+            if (failed === 0) {
+                log('🎉 All integration tests passed successfully!', 'success');
+            } else {
+                log(`⚠️ ${failed} test(s) failed. Please check the error details above.`, 'warn');
+            }
+        }
+
+        async function runSpecificTest(testType) {
+            const tests = {
+                basic: testBasicSetup,
+                auth: testAuthentication,
+                services: testServices,
+                worker: testWebWorker,
+                security: testSecurity
+            };
+
+            if (tests[testType]) {
+                await tests[testType]();
+            } else {
+                log(`Unknown test type: ${testType}`, 'error');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('success-results').innerHTML = '';
+            document.getElementById('error-results').innerHTML = '';
+            
+            // Reset all status indicators
+            const statuses = ['basic', 'auth', 'services', 'worker', 'security'];
+            statuses.forEach(status => updateStatus(status, 'pending'));
+            
+            // Restore initial messages
+            log('📄 Integration test page loaded');
+            log('💡 Click "Run All Tests" to execute comprehensive integration tests');
+            log('🎯 Or run individual test categories using the specific test buttons');
+        }
+
+        // Expose functions globally
+        window.runAllTests = runAllTests;
+        window.runSpecificTest = runSpecificTest;
+        window.clearLog = clearLog;
+
+        // Auto-run basic setup on page load
+        log('📄 Integration test page loaded');
+        log('💡 Click "Run All Tests" to execute comprehensive integration tests');
+        log('🎯 Or run individual test categories using the specific test buttons');
+
+    </script>
+</body>
+</html> 

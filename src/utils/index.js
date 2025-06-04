@@ -1,5 +1,5 @@
 import { encode as msgpack_packb, Decoder } from "@msgpack/msgpack";
-import { parseComponent } from "./pluginParser";
+import { parseComponent } from "./pluginParser.js";
 
 export function toCamelCase(str) {
     // Check if the string is already in camelCase

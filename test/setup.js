@@ -77,6 +77,10 @@ global.crypto = {
             arr[i] = Math.floor(Math.random() * 256);
         }
         return arr;
+    },
+    subtle: {
+        importKey: async () => ({ type: 'secret' }),
+        sign: async () => new ArrayBuffer(32)
     }
 };
 
@@ -93,11 +97,11 @@ global.btoa = (str) => {
 global.expect = chai.expect;
 global.sinon = sinon;
 
-// Suppress console logs during tests unless explicitly needed
+// Enable console logs for debugging
 const originalConsole = global.console;
 global.console = {
     ...originalConsole,
-    log: () => {}, // Suppress logs
-    warn: () => {}, // Suppress warnings
+    log: originalConsole.log, // Enable logs for debugging
+    warn: originalConsole.warn, // Enable warnings for debugging
     error: originalConsole.error // Keep errors visible
 }; 

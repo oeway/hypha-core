@@ -1,6 +1,6 @@
 {
   "name": "hypha-core",
-  "version": "0.20.54",
+  "version": "0.20.55",
   "description": "Hypha Core",
   "scripts": {
     "start": "webpack serve --mode=development",
@@ -10,6 +10,7 @@
     "test:integration": "playwright test",
     "test:watch": "mocha --require test/setup.js test/unit/**/*.test.js --watch",
     "test:coverage": "c8 npm run test:unit",
+    "serve:tests": "node scripts/serve-tests.js",
     "publish-npm": "npm run build && npm publish --access public"
   },
   "main": "index.js",
@@ -47,7 +48,7 @@
     "autoprefixer": "^10.4.19",
     "buffer": "^6.0.3",
     "chai": "^4.3.4",
-    "hypha-rpc": "^0.20.54",
+    "hypha-rpc": "^0.20.55",
     "imjoy-rpc": "^0.5.59",
     "mocha": "^8.4.0",
     "mock-socket": "^9.3.1",

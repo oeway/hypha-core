@@ -1,4 +1,4 @@
-import { randId, assert, parsePluginCode, RedisRPCConnection } from './utils';
+import { randId, assert, parsePluginCode, RedisRPCConnection } from './utils/index.js';
 import { hyphaWebsocketClient } from 'hypha-rpc';
 
 // Ensure the client_id is safe
@@ -10,9 +10,101 @@ function validateKeyPart(keyPart) {
     }
 }
 
+// JWT HS256 Implementation
+function base64UrlEncode(data) {
+    const base64 = btoa(
+        typeof data === 'string' 
+            ? data 
+            : String.fromCharCode(...new Uint8Array(data))
+    );
+    return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function base64UrlDecode(base64Url) {
+    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+        base64 += '=';
+    }
+    return atob(base64);
+}
+
+async function hmacSha256(key, data) {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(key);
+    const msgData = encoder.encode(data);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+    return new Uint8Array(signature);
+}
+
+async function generateJWT(payload, secret) {
+    const header = {
+        alg: 'HS256',
+        typ: 'JWT'
+    };
+    
+    const encodedHeader = base64UrlEncode(JSON.stringify(header));
+    const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+    const unsigned = `${encodedHeader}.${encodedPayload}`;
+    
+    const signature = await hmacSha256(secret, unsigned);
+    const encodedSignature = base64UrlEncode(signature);
+    return `${unsigned}.${encodedSignature}`;
+}
+
+async function verifyJWT(token, secret) {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+        throw new Error('Invalid JWT format');
+    }
+    
+    const [encodedHeader, encodedPayload, encodedSignature] = parts;
+    const unsigned = `${encodedHeader}.${encodedPayload}`;
+    
+    try {
+        const header = JSON.parse(base64UrlDecode(encodedHeader));
+        if (header.alg !== 'HS256') {
+            throw new Error('Unsupported algorithm');
+        }
+        
+        const expectedSignature = await hmacSha256(secret, unsigned);
+        const actualSignature = new Uint8Array(
+            Array.from(base64UrlDecode(encodedSignature)).map(c => c.charCodeAt(0))
+        );
+        
+        if (expectedSignature.length !== actualSignature.length) {
+            throw new Error('Invalid signature');
+        }
+        
+        for (let i = 0; i < expectedSignature.length; i++) {
+            if (expectedSignature[i] !== actualSignature[i]) {
+                throw new Error('Invalid signature');
+            }
+        }
+        
+        const payload = JSON.parse(base64UrlDecode(encodedPayload));
+        
+        // Check expiration
+        if (payload.exp && Date.now() / 1000 > payload.exp) {
+            throw new Error('Token expired');
+        }
+        
+        return payload;
+    } catch (error) {
+        throw new Error(`JWT verification failed: ${error.message}`);
+    }
+}
+
 export class Workspace {
     static workspaces = {};
-    static tokens = {};
     static clients = {};
 
     constructor(hyphaCore) {
@@ -728,13 +820,47 @@ export class Workspace {
 
             "list_services": this.listServices.bind(this),
 
-            "generate_token": async (context) => {
-                const workspaceId = context.ws;
-                const token = randId();
-                Workspace.tokens[token] = {
-                    "workspace": workspaceId,
+            "generate_token": async (tokenConfig, context) => {
+                // Handle default value for tokenConfig
+                if (!tokenConfig) {
+                    tokenConfig = {};
+                }
+                
+                const currentWorkspace = context.ws;
+                const currentClientId = context.from?.split('/')[1];
+                
+                // Determine target workspace with access control
+                let targetWorkspace = tokenConfig.workspace || currentWorkspace;
+                
+                // Only root client in default workspace can generate tokens for other workspaces
+                if (targetWorkspace !== currentWorkspace) {
+                    if (currentWorkspace !== "default" || currentClientId !== "root") {
+                        throw new Error(`Access denied: Cannot generate token for workspace '${targetWorkspace}' from workspace '${currentWorkspace}' with client '${currentClientId}'. Only root client in default workspace can generate cross-workspace tokens.`);
+                    }
+                }
+                
+                // Build JWT payload
+                const payload = {
+                    sub: tokenConfig.user_id || context.user?.id || "anonymous",
+                    workspace: targetWorkspace,
+                    client_id: tokenConfig.client_id || context.from?.split('/')[1] || "anonymouz-" + Date.now().toString(),
+                    email: tokenConfig.email || context.user?.email || "",
+                    roles: tokenConfig.roles || context.user?.roles || [],
+                    scope: Array.isArray(tokenConfig.scopes) ? tokenConfig.scopes.join(' ') : (tokenConfig.scope || ""),
+                    iat: Math.floor(Date.now() / 1000),
+                    exp: tokenConfig.expires_in ? Math.floor(Date.now() / 1000) + tokenConfig.expires_in : Math.floor(Date.now() / 1000) + (24 * 60 * 60), // Default 24 hours
+                    iss: "hypha-core",
+                    aud: "hypha-api"
                 };
-                return token;
+                
+                // Get JWT secret from server
+                const jwtSecret = this._server.jwtSecret;
+                if (!jwtSecret) {
+                    throw new Error("JWT secret not configured on server");
+                }
+                
+                // Generate and return JWT token
+                return await generateJWT(payload, jwtSecret);
             },
             "load_app": async (config, extra_config, context) => {
                 return this.loadApp(config, extra_config, context);
