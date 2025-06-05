@@ -401,3 +401,103 @@ export function parsePluginCode(code, overwrite_config) {
         throw `Failed to parse the plugin file, error: ${e}`;
     }
 }
+
+/**
+ * Environment detection utilities for cross-platform compatibility
+ */
+export const Environment = {
+    /**
+     * Check if we're running in a browser environment
+     */
+    isBrowser() {
+        return typeof window !== 'undefined' && 
+               typeof document !== 'undefined' && 
+               typeof navigator !== 'undefined';
+    },
+
+    /**
+     * Check if we're running in Node.js
+     */
+    isNode() {
+        return typeof process !== 'undefined' && 
+               process.versions && 
+               process.versions.node;
+    },
+
+    /**
+     * Check if we're running in Deno
+     */
+    isDeno() {
+        return typeof Deno !== 'undefined';
+    },
+
+    /**
+     * Check if we're running in a server environment (Node.js or Deno)
+     */
+    isServer() {
+        return this.isNode() || this.isDeno();
+    },
+
+    /**
+     * Get environment name for debugging
+     */
+    getEnvironment() {
+        if (this.isBrowser()) return 'browser';
+        if (this.isDeno()) return 'deno';
+        if (this.isNode()) return 'node';
+        return 'unknown';
+    },
+
+    /**
+     * Require browser environment or throw error
+     */
+    requireBrowser(feature) {
+        if (!this.isBrowser()) {
+            throw new Error(`${feature} requires browser environment. Currently running in: ${this.getEnvironment()}`);
+        }
+    },
+
+    /**
+     * Get safe base URL for different environments
+     */
+    getSafeBaseUrl() {
+        if (this.isBrowser() && typeof document !== 'undefined' && document.location) {
+            return new URL('./', document.location.href).href;
+        }
+        // Default fallback for server environments
+        return 'http://localhost:8080/';
+    },
+
+    /**
+     * Safe postMessage wrapper
+     */
+    safePostMessage(target, message, origin = '*') {
+        // PostMessage is available in browsers and Deno (Web API compatibility)
+        if ((this.isBrowser() || this.isDeno()) && target && typeof target.postMessage === 'function') {
+            target.postMessage(message, origin);
+        } else {
+            console.warn('postMessage not available in current environment:', this.getEnvironment());
+        }
+    },
+
+    /**
+     * Safe event listener management
+     */
+    safeAddEventListener(target, event, handler) {
+        // Event listeners are available in browsers and Deno (Web API compatibility)
+        if ((this.isBrowser() || this.isDeno()) && target && typeof target.addEventListener === 'function') {
+            target.addEventListener(event, handler);
+            return true;
+        }
+        return false;
+    },
+
+    safeRemoveEventListener(target, event, handler) {
+        // Event listeners are available in browsers and Deno (Web API compatibility)
+        if ((this.isBrowser() || this.isDeno()) && target && typeof target.removeEventListener === 'function') {
+            target.removeEventListener(event, handler);
+            return true;
+        }
+        return false;
+    }
+};

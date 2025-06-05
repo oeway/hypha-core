@@ -213,7 +213,7 @@ const appConfig = {
     ],
   },
   devServer: {
-    port: 3000,
+    port: 8080,
     headers: {
       "Access-Control-Allow-Origin": "*",
     },

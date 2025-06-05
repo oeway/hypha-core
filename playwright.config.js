@@ -1,57 +1,39 @@
 // playwright.config.js
-module.exports = {
-    testDir: './tests',
-    // Look for test files only in tests/integration/
-    testMatch: ['**/tests/integration/**/*.test.js'],
-    timeout: 30000, // 30 seconds timeout for each test
-    use: {
-      browserName: 'chromium',
-      headless: true,
-      viewport: { width: 1280, height: 720 },
-      ignoreHTTPSErrors: true,
-      video: 'retain-on-failure',
-      screenshot: 'only-on-failure',
-      // Add trace for debugging
-      trace: 'retain-on-failure',
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './test/integration',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: [['html', { open: 'never' }]],
+  use: {
+    baseURL: 'http://localhost:8080',
+    trace: 'on-first-retry',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
     },
-    // Add more browsers for cross-browser testing
-    projects: [
-      {
-        name: 'chromium',
-        use: { browserName: 'chromium' },
-      },
-      {
-        name: 'firefox',
-        use: { browserName: 'firefox' },
-      },
-      {
-        name: 'webkit',
-        use: { browserName: 'webkit' },
-      },
-    ],
-    webServer: [
-      {
-        command: 'npm start -- --port 8080',
-        port: 8080,
-        timeout: 120 * 1000,
-        reuseExistingServer: !process.env.CI,
-      },
-      {
-        command: 'npm run serve:tests',
-        port: 3000,
-        timeout: 120 * 1000,
-        reuseExistingServer: !process.env.CI,
-      }
-    ],
-    // Reporter configuration
-    reporter: [
-      ['list'], // Console output
-      ['html'], // HTML report
-      ['json', { outputFile: 'test-results/results.json' }], // JSON results
-    ],
-    // Retry configuration
-    retries: process.env.CI ? 2 : 0,
-    // Parallel test execution
-    workers: process.env.CI ? 1 : undefined,
-  };
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+  ],
+
+  webServer: {
+    command: 'npm start',
+    port: 8080,
+    reuseExistingServer: !process.env.CI,
+  },
+});
   

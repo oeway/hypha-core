@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hypha App</title>
     <style>
         body {
@@ -11,12 +13,94 @@
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.55/dist/hypha-rpc-websocket.min.js"></script>
     <script>
-        hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then((api)=>{
-            console.log("Hypha client is ready", api)
-        }).catch(console.error);
+        // Extract authentication parameters from URL hash
+        function getAuthFromHash() {
+            const hash = window.location.hash.slice(1); // Remove the #
+            if (!hash) return null;
+            
+            const params = new URLSearchParams(hash);
+            const auth = {
+                client_id: params.get('client_id'),
+                workspace: params.get('workspace'),
+                server_url: params.get('server_url')
+            };
+            
+            if (params.get('token')) {
+                auth.token = params.get('token');
+            }
+            
+            if (params.get('user_info')) {
+                try {
+                    auth.user_info = JSON.parse(params.get('user_info'));
+                } catch (e) {
+                    console.warn('Failed to parse user_info from hash:', e);
+                }
+            }
+            
+            return auth;
+        }
+        
+        // Initialize with hash parameters or wait for postMessage
+        const hashAuth = getAuthFromHash();
+        
+        if (hashAuth && hashAuth.client_id && hashAuth.workspace && hashAuth.server_url) {
+            // Use hash authentication
+            const config = {
+                server_url: hashAuth.server_url,
+                client_id: hashAuth.client_id,
+                workspace: hashAuth.workspace,
+                enable_execution: true
+            };
+            
+            if (hashAuth.token) {
+                config.token = hashAuth.token;
+            }
+            
+            if (hashAuth.user_info) {
+                config.user_info = hashAuth.user_info;
+            }
+            
+            hyphaWebsocketClient.setupLocalClient(config).then((api) => {
+                console.log("Hypha client is ready (hash auth)", api);
+                document.body.innerHTML = `<pre>Hypha client ready in workspace: ${config.workspace}</pre>`;
+            }).catch(error => {
+                console.error("Failed to initialize Hypha client (hash auth):", error);
+                document.body.innerHTML = `<pre>Error: ${error.message}</pre>`;
+            });
+        } else {
+            // Fall back to postMessage initialization
+            window.addEventListener('message', function(event) {
+                if (event.data && event.data.type === 'initializeHyphaClient') {
+                    const config = {
+                        server_url: event.data.server_url,
+                        client_id: event.data.client_id,
+                        workspace: event.data.workspace,
+                        enable_execution: true
+                    };
+                    
+                    // Add token if provided
+                    if (event.data.token) {
+                        config.token = event.data.token;
+                    }
+                    
+                    // Add user info if provided
+                    if (event.data.user_info) {
+                        config.user_info = event.data.user_info;
+                    }
+                    
+                    hyphaWebsocketClient.setupLocalClient(config).then((api) => {
+                        console.log("Hypha client is ready (postMessage)", api);
+                        document.body.innerHTML = `<pre>Hypha client ready in workspace: ${config.workspace}</pre>`;
+                    }).catch(error => {
+                        console.error("Failed to initialize Hypha client (postMessage):", error);
+                        document.body.innerHTML = `<pre>Error: ${error.message}</pre>`;
+                    });
+                }
+            });
+        }
     </script>
 </head>
 <body>
-    <pre>Initializing...</pre>
+    <pre>Waiting for initialization...</pre>
 </body>
 </html>

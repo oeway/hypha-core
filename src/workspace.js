@@ -1,4 +1,4 @@
-import { randId, assert, parsePluginCode, RedisRPCConnection } from './utils/index.js';
+import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert, Environment, parsePluginCode } from './utils/index.js';
 import { hyphaWebsocketClient } from 'hypha-rpc';
 
 // Ensure the client_id is safe
@@ -184,8 +184,18 @@ export class Workspace {
     async registerService(service, context) {
         const ws = context.ws;
         const clientId = context.from;
+        const userInfo = context.user;
+        
         service.config = service.config || {};
         service.config.workspace = ws;
+        
+        // Security check: only root user can register services in public and default workspaces
+        // Exception: built-in services can be registered by users in any workspace
+        const isBuiltInService = service.id.includes(":built-in");
+        if ((ws === "public" || ws === "default") && !clientId.endsWith("/root") && !isBuiltInService) {
+            throw new Error(`Access denied: Only root user can register services in '${ws}' workspace. Current client: ${clientId}`);
+        }
+        
         if (!service.id.includes("/")) {
             service.id = `${ws}/${service.id}`;
         }
@@ -301,7 +311,7 @@ export class Workspace {
             }
             query.client_id = serviceId.split("/")[1];
         } else if (!serviceId.includes("/") && !serviceId.includes(":")) {
-            const workspace = query.workspace || "*";
+            const workspace = query.workspace || ws;
             serviceId = `${workspace}/*:${serviceId}`;
             query.workspace = workspace;
             query.client_id = "*";
@@ -557,6 +567,9 @@ export class Workspace {
     }
 
     async createWindow(config, extra_config, context) {
+        // Window creation requires browser environment
+        Environment.requireBrowser('Window/iframe creation');
+        
         let elem;
         const ws = context.ws;
         const clientId = "client-" + Date.now();
@@ -565,19 +578,38 @@ export class Workspace {
             workspace: ws,
             websocket: null,
             postMessage: (data) => {
-                elem.contentWindow.postMessage(data);
+                Environment.safePostMessage(elem.contentWindow, data);
             },
         };
 
+        // Prepare authentication parameters for URL hash
+        const authParams = new URLSearchParams();
+        authParams.set('client_id', clientId);
+        authParams.set('workspace', ws);
+        authParams.set('server_url', this.serverUrl);
+        if (context.token) {
+            authParams.set('token', context.token);
+        }
+        if (context.user) {
+            authParams.set('user_info', JSON.stringify(context.user));
+        }
+        const authHash = `#${authParams.toString()}`;
+
         if (config.type === "iframe") {
+            if (typeof document === 'undefined') {
+                throw new Error('iframe creation requires browser environment with document API');
+            }
             elem = document.createElement("iframe");
-            elem.src = config.src;
+            elem.src = config.src + authHash;
             elem.id = config.window_id || "window-" + Date.now();
             elem.style.width = config.width || "100%";
             elem.style.height = config.height || "100%";
             elem.style.display = "none";
             document.body.appendChild(elem);
         } else if (config.window_id) {
+            if (typeof document === 'undefined') {
+                throw new Error('Window element access requires browser environment with document API');
+            }
             // do a while loop to wait for the element to be available
             // the timeout should be 9 * 500 ms
             let count = 0;
@@ -606,10 +638,13 @@ export class Workspace {
         }
         if (elem.tagName !== "IFRAME") {
             // create a child iframe
+            if (typeof document === 'undefined') {
+                throw new Error('iframe creation requires browser environment with document API');
+            }
             const iframe = document.createElement("iframe");
             iframe.style.width = config.width || "100%";
             iframe.style.height = config.height || "100%";
-            iframe.src = config.src;
+            iframe.src = config.src + authHash;
             elem.appendChild(iframe);
             elem = iframe;
         }
@@ -630,11 +665,13 @@ export class Workspace {
             return;
         }
 
-        elem.contentWindow.postMessage({
+        Environment.safePostMessage(elem.contentWindow, {
             type: "initializeHyphaClient",
             server_url: this.serverUrl,
             client_id: clientId,
             workspace: ws,
+            token: context.token || null,
+            user_info: context.user || null,
             config,
         });
 
@@ -679,13 +716,13 @@ export class Workspace {
 
         switch (config.type) {
             case "web-worker":
-                return await this.createWorker(config, ws, this.baseUrl + "hypha-app-webworker.js");
+                return await this.createWorker(config, ws, this.baseUrl + "hypha-app-webworker.js", context);
             case "window":
             case "iframe":
                 config.src = this.baseUrl + "hypha-app-iframe.html";
                 return await this.createWindow(config, extra_config, context);
             case "web-python":
-                return await this.createWorker(config, ws, this.baseUrl + "hypha-app-webpython.js");
+                return await this.createWorker(config, ws, this.baseUrl + "hypha-app-webpython.js", context);
             default:
                 throw new Error("Unsupported plugin type: " + config.type);
         }
@@ -708,9 +745,27 @@ export class Workspace {
         })
     }
 
-    async createWorker(config, workspace, workerUrl) {
-        const worker = new Worker(workerUrl);
+    async createWorker(config, workspace, workerUrl, context) {
+        // Check if Worker API is available
+        if (typeof Worker === 'undefined') {
+            throw new Error('WebWorker creation requires browser environment with Worker API');
+        }
+        
+        // Prepare authentication parameters for URL hash
+        const authParams = new URLSearchParams();
         const clientId = "client-" + Date.now();
+        authParams.set('client_id', clientId);
+        authParams.set('workspace', workspace);
+        authParams.set('server_url', this.serverUrl);
+        if (context.token) {
+            authParams.set('token', context.token);
+        }
+        if (context.user) {
+            authParams.set('user_info', JSON.stringify(context.user));
+        }
+        const authHash = `#${authParams.toString()}`;
+        
+        const worker = new Worker(workerUrl + authHash);
         this.connections[workspace + "/" + clientId] = {
             id: workspace + "/" + clientId,
             source: worker,
@@ -727,6 +782,8 @@ export class Workspace {
             server_url: this.serverUrl,
             workspace: workspace,
             client_id: clientId,
+            token: context?.token || null,
+            user_info: context?.user || null,
             config,
         });
         return await this.waitForClient(workspace + "/" + clientId, 60000);

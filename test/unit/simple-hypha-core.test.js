@@ -538,6 +538,45 @@ describe('HyphaCore Basic Functionality Tests', () => {
             expect(payload.exp).to.be.greaterThan(now);
             expect(payload.exp).to.be.lessThan(now + 400); // Should be around 5 minutes
         });
+
+        it('should allow built-in services to bypass workspace security restrictions', async () => {
+            const context = {
+                ws: 'default',
+                from: 'default/regular-user', // Non-root user
+                user: { id: 'regular-user', email: 'user@example.com', roles: ['user'] }
+            };
+
+            // Regular service registration should fail for non-root user in default workspace
+            try {
+                await workspace.registerService({
+                    id: 'regular-service:default',
+                    name: 'Regular Service',
+                    config: { visibility: 'public' },
+                    test: () => 'test'
+                }, context);
+                expect.fail('Should have thrown access denied error for regular service');
+            } catch (error) {
+                expect(error.message).to.include('Access denied');
+                expect(error.message).to.include('Only root user can register services');
+            }
+
+            // Built-in service registration should succeed for non-root user
+            try {
+                await workspace.registerService({
+                    id: 'system-service:built-in',
+                    name: 'System Service',
+                    config: { visibility: 'public' },
+                    systemCheck: () => 'system-ok'
+                }, context);
+                
+                // Verify the service was registered by checking Redis call
+                expect(mockServer.redis.hset.called).to.be.true;
+                const lastCall = mockServer.redis.hset.getCall(mockServer.redis.hset.callCount - 1);
+                expect(lastCall.args[0]).to.include(':built-in@');
+            } catch (error) {
+                expect.fail(`Built-in service registration should succeed: ${error.message}`);
+            }
+        });
     });
 
     describe('Service Registration Logic', () => {

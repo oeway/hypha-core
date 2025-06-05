@@ -9,7 +9,7 @@
     "use strict";
 
     // Establish the root object, `window` in the browser, or `exports` on the server.
-    var root = this;
+    var root = this || globalThis;
 
     // Create the mock object.
     var redismock = {};
@@ -3614,3 +3614,6 @@
     }
 
 }).call(this);
+
+// ES6 export for module compatibility
+export default redismock;

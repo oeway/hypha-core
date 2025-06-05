@@ -1,38 +1,71 @@
 import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'hypha-rpc';
 import { imjoyRPC } from 'imjoy-rpc';
-import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert } from './utils/index.js';
+import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert, Environment } from './utils/index.js';
 import { Workspace } from './workspace.js';
 import { toCamelCase } from './utils/index.js';
-import * as redisClient from './utils/redis-mock.js';
+import redisClient from './utils/redis-mock.js';
 
 const connectToServer = hyphaWebsocketClient.connectToServer;
 const AUTH0_NAMESPACE = "https://api.imjoy.io/";
 
 // JWT HS256 Implementation (for verification only)
+function base64UrlEncode(data) {
+    // Check if btoa is available (browser and Deno)
+    if (typeof btoa !== 'undefined') {
+        const base64 = btoa(
+            typeof data === 'string' 
+                ? data 
+                : String.fromCharCode(...new Uint8Array(data))
+        );
+        return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    } else if (typeof Buffer !== 'undefined') {
+        // For Node.js
+        const buffer = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
+        const base64 = buffer.toString('base64');
+        return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    } else {
+        throw new Error('Base64 encoding not available in current environment');
+    }
+}
+
 function base64UrlDecode(base64Url) {
     let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     while (base64.length % 4) {
         base64 += '=';
     }
-    return atob(base64);
+    
+    // Check if atob is available (browser and Deno)
+    if (typeof atob !== 'undefined') {
+        return atob(base64);
+    } else if (typeof Buffer !== 'undefined') {
+        // For Node.js
+        return Buffer.from(base64, 'base64').toString('binary');
+    } else {
+        throw new Error('Base64 decoding not available in current environment');
+    }
 }
 
 async function hmacSha256(key, data) {
-    const encoder = new TextEncoder();
-    const keyData = encoder.encode(key);
-    const msgData = encoder.encode(data);
-    
-    const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-    );
-    
-    const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
-    return new Uint8Array(signature);
+    // Check if Web Crypto API is available
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(key);
+        const msgData = encoder.encode(data);
+        
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            keyData,
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign']
+        );
+        
+        const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+        return new Uint8Array(signature);
+    } else {
+        throw new Error('JWT HS256 signing requires Web Crypto API (browser) or crypto module (Node.js/Deno)');
+    }
 }
 
 async function verifyJWT(token, secret) {
@@ -78,6 +111,21 @@ async function verifyJWT(token, secret) {
     }
 }
 
+async function generateJWT(payload, secret) {
+    const header = {
+        alg: 'HS256',
+        typ: 'JWT'
+    };
+    
+    const encodedHeader = base64UrlEncode(JSON.stringify(header));
+    const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+    const unsigned = `${encodedHeader}.${encodedPayload}`;
+    
+    const signature = await hmacSha256(secret, unsigned);
+    const encodedSignature = base64UrlEncode(signature);
+    return `${unsigned}.${encodedSignature}`;
+}
+
 class HyphaCore extends MessageEmitter {
     static servers = {};
 
@@ -86,10 +134,13 @@ class HyphaCore extends MessageEmitter {
         config = config || {};
         this.redis = redisClient;
         this.port = config.port || 8080;
-        this.baseUrl = config.base_url || new URL('./', document.location.href).href;
+        
+        // Use environment-safe base URL detection
+        this.baseUrl = config.base_url || Environment.getSafeBaseUrl();
         if (!this.baseUrl.endsWith("/")) {
             this.baseUrl += "/";
         }
+        
         if (config.url && config.port) {
             throw new Error("Please provide either url or port, not both.");
         }
@@ -114,8 +165,16 @@ class HyphaCore extends MessageEmitter {
         this.imjoyPluginWindows = new Map();
         this.jwtSecret = config.jwtSecret || "hypha-core-default-secret-" + randId();
 
+        // Environment info for debugging
+        this.environment = Environment.getEnvironment();
+        
+        // Only log window creation in browser environment
         this.on("add_window", (config) => {
-            console.log("Creating window: ", config);
+            if (Environment.isBrowser()) {
+                console.log("Creating window: ", config);
+            } else {
+                console.warn(`Window creation requested but not supported in ${this.environment} environment:`, config);
+            }
         });
     }
 
@@ -161,7 +220,7 @@ class HyphaCore extends MessageEmitter {
             disconnect: function () { },
             emit: msg => {
                 msg.peer_id = coreConnection.peer_id;
-                contentWindow.postMessage(msg, "*")
+                Environment.safePostMessage(contentWindow, msg, "*");
             },
             on: function (event, handler) {
                 coreConnection._messageHandler[event] = handler;
@@ -259,7 +318,14 @@ class HyphaCore extends MessageEmitter {
             this.server = new this.ServerClass(this.wsUrl, { mock: false });
             HyphaCore.servers[this.url] = this.server;
             this.messageHandler = this._handleClientMessage.bind(this);
-            window.addEventListener("message", this.messageHandler);
+            
+            // Only add window event listener in browser environment
+            if (Environment.isBrowser()) {
+                Environment.safeAddEventListener(window, "message", this.messageHandler);
+            } else {
+                console.log(`Running in ${this.environment} environment - window message handling disabled`);
+            }
+            
             this.workspaceManager = new Workspace(this);
             await this.workspaceManager.setup({
                 client_id: this.workspaceManagerId,
@@ -267,91 +333,11 @@ class HyphaCore extends MessageEmitter {
                 default_service: this.defaultServices,
             })
         }
+        
         this.server.on('connection', async websocket => {
-            let authConfig = {};
-            try{
-                const data = await new Promise((resolve, reject) => {
-                    websocket.on('message', resolve);
-                    websocket.on('error', reject);
-                });
-                const authInfo = JSON.parse(data);
-                Object.assign(authConfig, authInfo);
-            }
-            catch(e){
-                console.error(e);
-                websocket.close();
-                return;
-            }
-            
-            let userInfo;
-            let workspace;
-            
-            if (authConfig.token) {
-                try {
-                    // Try to verify JWT token
-                    const payload = await verifyJWT(authConfig.token, this.jwtSecret);
-                    
-                    userInfo = {
-                        id: payload.sub || payload.user_id || "anonymous",
-                        is_anonymous: !payload.email,
-                        email: payload.email || "",
-                        roles: payload.roles || [],
-                        scopes: payload.scope ? payload.scope.split(' ') : [],
-                        expires_at: payload.exp,
-                    };
-                    
-                    workspace = payload.workspace || authConfig.workspace || payload.sub || "default";
-                    
-                } catch (jwtError) {
-                    // Try legacy JWT parsing (without verification for backward compatibility)
-                    try {
-                        const info = parseJwt(authConfig.token);
-                        const expiresAt = info["exp"];
-                        userInfo = {
-                            id: info["sub"],
-                            is_anonymous: !info[AUTH0_NAMESPACE + "email"],
-                            email: info[AUTH0_NAMESPACE + "email"],
-                            roles: info[AUTH0_NAMESPACE + "roles"],
-                            scopes: info["scope"],
-                            expires_at: expiresAt,
-                        };
-                        workspace = userInfo.id;
-                    } catch (parseError) {
-                        console.error("Token verification failed:", jwtError.message);
-                        websocket.close();
-                        return;
-                    }
-                }
-            } else {
-                userInfo = { id: "anonymous", is_anonymous: true, email: "anonymous@imjoy.io" };
-                workspace = authConfig.workspace || "default";
-            }
-            
-            if (!workspace) {
-                workspace = "workspace-" + randId();
-            }
-            
-            const baseUrl = this.url.endsWith("/") ? this.url.slice(0, -1) : this.url;
-            // send connection info
-            websocket.send(JSON.stringify({
-                "type": "connection_info",
-                "hypha_version": "0.1.0",
-                "public_base_url": baseUrl,
-                "local_base_url": baseUrl,
-                "manager_id": this.workspaceManagerId,
-                "workspace": workspace,
-                "client_id": authConfig.client_id,
-                "user": userInfo,
-                "reconnection_token": null
-            }));
-            const conn = new RedisRPCConnection(this, workspace, authConfig.client_id, userInfo, this.workspaceManagerId)
-            conn.on_message(data=> {
-                websocket.send(data)
-            });
-            websocket.on('message', data => {
-                conn.emit_message(data);
-            });
+            await this._handleWebsocketConnection(websocket);
         });
+        
         config = config || {};
         config.server = this;
         config.WebSocketClass = this.WebSocketClass;
@@ -371,11 +357,346 @@ class HyphaCore extends MessageEmitter {
         return api;
     }
 
+    async _handleWebsocketConnection(websocket) {
+        let authConfig = {};
+        let userInfo;
+        let workspace;
+        let clientId;
+
+        try {
+            // Wait for first message with authentication information
+            const authData = await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Authentication timeout'));
+                }, 30000); // 30 second timeout
+
+                websocket.on('message', (data) => {
+                    clearTimeout(timeout);
+                    resolve(data);
+                });
+                
+                websocket.on('error', (error) => {
+                    clearTimeout(timeout);
+                    reject(error);
+                });
+                
+                websocket.on('close', () => {
+                    clearTimeout(timeout);
+                    reject(new Error('Connection closed during authentication'));
+                });
+            });
+
+            try {
+                authConfig = JSON.parse(authData);
+            } catch (parseError) {
+                await this._disconnectWebsocket(websocket, "Failed to decode authentication information", 1003);
+                return;
+            }
+
+            // Check for legacy imjoy-rpc clients (those passing auth via URL parameters)
+            if (authConfig.workspace === undefined && authConfig.client_id === undefined && authConfig.token === undefined) {
+                console.warn("Rejecting legacy imjoy-rpc client");
+                await this._disconnectWebsocket(websocket, "Connection rejected, please upgrade to `hypha-rpc` which passes authentication information in the first message", 1008);
+                return;
+            }
+
+            // Authenticate user
+            const authResult = await this._authenticateUser(authConfig);
+            userInfo = authResult.userInfo;
+            workspace = authResult.workspace;
+            clientId = authConfig.client_id;
+
+            if (!workspace) {
+                workspace = "workspace-" + randId();
+            }
+
+            if (!clientId) {
+                clientId = "client-" + randId();
+            }
+
+            // Check permissions
+            await this._checkClientPermissions(clientId, workspace, userInfo);
+
+            // Establish communication
+            await this._establishWebsocketCommunication(websocket, workspace, clientId, userInfo);
+            
+        } catch (error) {
+            console.error("WebSocket connection failed:", error.message);
+            await this._disconnectWebsocket(websocket, `Failed to establish connection: ${error.message}`, 1001);
+        }
+    }
+
+    async _authenticateUser(authConfig) {
+        let userInfo;
+        let workspace = authConfig.workspace;
+
+        if (authConfig.token) {
+            try {
+                // Try to verify JWT token
+                const payload = await verifyJWT(authConfig.token, this.jwtSecret);
+                
+                userInfo = {
+                    id: payload.sub || payload.user_id || "anonymous",
+                    is_anonymous: !payload.email,
+                    email: payload.email || "",
+                    roles: payload.roles || [],
+                    scopes: payload.scope ? payload.scope.split(' ') : [],
+                    expires_at: payload.exp,
+                };
+                
+                workspace = payload.workspace || authConfig.workspace || "default";
+                
+            } catch (jwtError) {
+                // Try legacy JWT parsing (without verification for backward compatibility)
+                try {
+                    const info = parseJwt(authConfig.token);
+                    const expiresAt = info["exp"];
+                    userInfo = {
+                        id: info["sub"],
+                        is_anonymous: !info[AUTH0_NAMESPACE + "email"],
+                        email: info[AUTH0_NAMESPACE + "email"],
+                        roles: info[AUTH0_NAMESPACE + "roles"],
+                        scopes: info["scope"],
+                        expires_at: expiresAt,
+                    };
+                    workspace = info.workspace || authConfig.workspace || userInfo.id;
+                } catch (parseError) {
+                    throw new Error(`Token verification failed: ${jwtError.message}`);
+                }
+            }
+        } else if (authConfig.reconnection_token) {
+            // Handle reconnection token (simplified - in full implementation would verify against stored tokens)
+            try {
+                const payload = await verifyJWT(authConfig.reconnection_token, this.jwtSecret);
+                userInfo = {
+                    id: payload.sub || "anonymous",
+                    is_anonymous: !payload.email,
+                    email: payload.email || "",
+                    roles: payload.roles || [],
+                    scopes: payload.scope ? payload.scope.split(' ') : [],
+                    expires_at: payload.exp,
+                };
+                workspace = payload.workspace || authConfig.workspace;
+                
+                // Verify client_id matches for reconnection
+                if (payload.client_id && authConfig.client_id && payload.client_id !== authConfig.client_id) {
+                    throw new Error("Client ID mismatch during reconnection");
+                }
+            } catch (error) {
+                throw new Error(`Reconnection token verification failed: ${error.message}`);
+            }
+        } else {
+            // Anonymous users get a generated user ID and workspace
+            const anonymousUserId = "anonymous-" + randId();
+            userInfo = { 
+                id: anonymousUserId, 
+                is_anonymous: true, 
+                email: "anonymous@imjoy.io",
+                roles: [],
+                scopes: []
+            };
+            
+            // If no workspace specified, use user ID as workspace for isolation
+            const requestedWorkspace = authConfig.workspace;
+            if (!requestedWorkspace) {
+                workspace = anonymousUserId; // Use user ID as workspace for isolation
+            } else {
+                // For security: anonymous clients can only access default/public workspaces or their own workspace
+                if (requestedWorkspace !== "default" && requestedWorkspace !== "public" && requestedWorkspace !== anonymousUserId) {
+                    throw new Error(`Anonymous client attempted to access protected workspace: ${requestedWorkspace}`);
+                }
+                workspace = requestedWorkspace;
+            }
+        }
+
+        return { userInfo, workspace };
+    }
+
+    async _checkClientPermissions(clientId, workspace, userInfo) {
+        // Basic permission check - in full implementation would be more comprehensive
+        if (workspace === "public" || workspace === "default") {
+            // Public workspaces are generally accessible
+            return;
+        }
+        
+        // For private workspaces, check if user has permission
+        if (userInfo.is_anonymous && !workspace.startsWith("anonymous-")) {
+            throw new Error(`Permission denied for workspace: ${workspace}`);
+        }
+    }
+
+    async _establishWebsocketCommunication(websocket, workspace, clientId, userInfo) {
+        const connectionKey = `${workspace}/${clientId}`;
+        
+        // Store websocket connection
+        if (!this._websockets) {
+            this._websockets = {};
+        }
+        this._websockets[connectionKey] = websocket;
+
+        try {
+            // Create RPC connection
+            const conn = new RedisRPCConnection(this, workspace, clientId, userInfo, this.workspaceManagerId);
+            
+            // Set up message handling
+            conn.on_message(data => {
+                if (websocket.readyState === websocket.OPEN) {
+                    websocket.send(data);
+                }
+            });
+
+            // Generate reconnection token
+            const reconnectionToken = await this._generateReconnectionToken(userInfo, workspace, clientId);
+            
+            // Send connection info
+            const baseUrl = this.url.endsWith("/") ? this.url.slice(0, -1) : this.url;
+            const connectionInfo = {
+                "type": "connection_info",
+                "hypha_version": "0.1.0",
+                "public_base_url": baseUrl,
+                "local_base_url": baseUrl,
+                "manager_id": this.workspaceManagerId,
+                "workspace": workspace,
+                "client_id": clientId,
+                "user": userInfo,
+                "reconnection_token": reconnectionToken,
+                "reconnection_token_life_time": 3600 // 1 hour
+            };
+            
+            websocket.send(JSON.stringify(connectionInfo));
+
+            // Handle incoming messages
+            websocket.on('message', async (data) => {
+                try {
+                    if (typeof data === 'string') {
+                        // Handle text messages (control messages)
+                        if (data.length > 1000) {
+                            console.warn(`Ignoring long text message: ${data.substring(0, 1000)}...`);
+                            return;
+                        }
+                        
+                        const message = JSON.parse(data);
+                        
+                        if (message.type === "ping") {
+                            websocket.send(JSON.stringify({ type: "pong" }));
+                        } else if (message.type === "refresh_token") {
+                            const newReconnectionToken = await this._generateReconnectionToken(userInfo, workspace, clientId);
+                            websocket.send(JSON.stringify({
+                                type: "reconnection_token",
+                                reconnection_token: newReconnectionToken
+                            }));
+                        } else {
+                            console.info("Unknown message type:", message.type);
+                        }
+                    } else {
+                        // Handle binary messages (RPC data)
+                        await conn.emit_message(data);
+                    }
+                } catch (error) {
+                    console.error("Error processing websocket message:", error);
+                }
+            });
+
+            // Handle disconnection
+            websocket.on('close', async () => {
+                await this._handleWebsocketDisconnection(websocket, workspace, clientId, userInfo, conn);
+            });
+
+            websocket.on('error', async (error) => {
+                console.error(`WebSocket error for ${connectionKey}:`, error);
+                await this._handleWebsocketDisconnection(websocket, workspace, clientId, userInfo, conn);
+            });
+
+        } catch (error) {
+            // Clean up on error
+            if (this._websockets && this._websockets[connectionKey]) {
+                delete this._websockets[connectionKey];
+            }
+            throw error;
+        }
+    }
+
+    async _generateReconnectionToken(userInfo, workspace, clientId) {
+        const payload = {
+            sub: userInfo.id,
+            workspace: workspace,
+            client_id: clientId,
+            email: userInfo.email,
+            roles: userInfo.roles || [],
+            scope: Array.isArray(userInfo.scopes) ? userInfo.scopes.join(' ') : "",
+            iat: Math.floor(Date.now() / 1000),
+            exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+            iss: "hypha-core",
+            aud: "hypha-reconnection"
+        };
+        
+        return await generateJWT(payload, this.jwtSecret);
+    }
+
+    async _handleWebsocketDisconnection(websocket, workspace, clientId, userInfo, conn) {
+        const connectionKey = `${workspace}/${clientId}`;
+        
+        try {
+            if (conn) {
+                await conn.disconnect("disconnected");
+            }
+            
+            console.info(`Client disconnected: ${connectionKey}`);
+        } catch (error) {
+            console.error(`Error handling disconnection for ${connectionKey}:`, error);
+        } finally {
+            // Clean up websocket tracking
+            if (this._websockets && this._websockets[connectionKey]) {
+                delete this._websockets[connectionKey];
+            }
+        }
+    }
+
+    async _disconnectWebsocket(websocket, reason, code = 1000) {
+        console.error("Disconnecting websocket, reason:", reason, "code:", code);
+        
+        try {
+            // Send error message if connection is still open
+            if (websocket.readyState === websocket.OPEN) {
+                websocket.send(JSON.stringify({ type: "error", message: reason }));
+            }
+        } catch (error) {
+            console.error("Error sending disconnect message:", error);
+        }
+        
+        try {
+            // Close the connection
+            if (websocket.readyState === websocket.OPEN || websocket.readyState === websocket.CONNECTING) {
+                websocket.close(code, reason);
+            }
+        } catch (error) {
+            console.error("Error closing websocket:", error);
+        }
+    }
+
+    getWebsockets() {
+        return this._websockets || {};
+    }
+
+    async forceDisconnect(workspace, clientId, code, reason) {
+        const connectionKey = `${workspace}/${clientId}`;
+        const websocket = this._websockets && this._websockets[connectionKey];
+        
+        if (!websocket) {
+            throw new Error(`Client not connected: ${connectionKey}`);
+        }
+        
+        await this._disconnectWebsocket(websocket, reason, code);
+    }
+
     async connect(config){
         config = config || {};
         config.server = this;
         config.WebSocketClass = this.WebSocketClass;
-        config.workspace = config.workspace || "default";
+        
+        // Don't set default workspace here - let the server-side logic handle it
+        // config.workspace = config.workspace || "default";
+        
         assert(config.client_id !== "root", "client_id cannot be 'root'");
         config.client_id = config.client_id || randId();
         const rawApi = await connectToServer(config);
@@ -406,12 +727,17 @@ class HyphaCore extends MessageEmitter {
     }
 
     close() {
-        for (const ws of Object.values(Workspace.workspaces)) {
-            ws.eventBus.off("service_added");
+        if (this.messageHandler) {
+            // Only remove window event listener in browser environment
+            if (Environment.isBrowser()) {
+                Environment.safeRemoveEventListener(window, "message", this.messageHandler);
+            }
         }
-        window.removeEventListener("message", this.messageHandler);
-        this.server.stop();
-        delete HyphaCore.servers[this.server.url];
+        
+        if (this.server) {
+            this.server.close();
+            delete HyphaCore.servers[this.url];
+        }
     }
 }
 

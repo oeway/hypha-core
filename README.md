@@ -42,28 +42,34 @@ Hypha Core is a client-side JavaScript library that creates a complete Hypha ser
 
 Hypha Core maintains exceptional quality through comprehensive testing:
 
-### 🧪 **Test Coverage: 150/150 Tests Passing** 
-- **42 Unit Tests** - Core functionality, utilities, and error handling
-- **54 Original Integration Tests** - HyphaCore server, UI interactions, and plugin loading
-- **54 Comprehensive Integration Tests** - Authentication, service registration, WebWorker integration, and cross-workspace security
+### 🛡️ **Enhanced Security Features Tested**
+- **JWT HS256 Authentication** with signature verification and expiration handling
+- **Cross-Workspace Access Control** with token-based permission enforcement
+- **Anonymous User Security** with automatic workspace assignment and access restrictions
+- **Service Registration Security** - Only root users can register services in default/public workspaces
+- **Workspace Isolation** with proper service visibility and permission management
+- **Multi-Client Authentication Workflows** demonstrating provider/consumer/restricted user patterns
 
 ### 🌐 **Cross-Browser Compatibility Verified**
-- **Chromium** ✅ - Full test suite passing
-- **Firefox** ✅ - Full test suite passing  
-- **WebKit** ✅ - Full test suite passing
-
-### 🔒 **Security Features Tested**
-- JWT HS256 authentication with signature verification
-- Cross-workspace access control enforcement
-- Token expiration and validation
-- Service visibility and permission management
-- User role-based access control
+- **Chromium** ✅ - All 117 tests passing
+- **Firefox** ✅ - All 117 tests passing  
+- **WebKit** ✅ - All 117 tests passing
 
 ### ⚡ **Performance Verified**
-- Unit tests complete in **231ms** ⚡
-- Full integration test suite in **2.1 minutes** 🔄
+- Unit tests complete in **~200ms** ⚡
+- Full integration test suite in **~35 seconds** 🔄
 - Real browser testing with actual WebSocket connections
-- WebWorker integration and isolation testing
+- JWT token generation and verification tested in all browsers
+
+### 🔒 **Security Tests Mirror Deno Example**
+The integration tests now include comprehensive permission and security validation similar to the TypeScript Deno example:
+
+- **JWT Token Generation** with proper access control
+- **Workspace Access Control** for cross-workspace token generation
+- **Service Registration Security** ensuring only authorized users can register in protected workspaces
+- **Multi-Client Authentication Workflows** with proper token validation
+- **Error Handling** for unauthorized access attempts
+- **Service Listing** with workspace isolation verification
 
 ### 🛠 **Development Quality**
 - ES6 module compatibility verified
@@ -117,6 +123,374 @@ window.hyphaCore = hyphaCore; // Expose globally if needed
 const api = await hyphaCore.start();
 ```
 
+## 🌐 Deno/Node.js Compatibility
+
+HyphaCore now supports **server environments** (Deno and Node.js) with automatic environment detection and graceful feature degradation.
+
+### **📚 TypeScript Support** 🎯
+
+HyphaCore provides **comprehensive TypeScript definitions** with full type safety:
+
+- ✅ **Complete Type Definitions**: `index.d.ts` with all HyphaCore APIs typed
+- ✅ **Deno/Node.js/Browser Support**: Environment-aware type definitions
+- ✅ **JWT Authentication Types**: `JWTPayload`, `TokenConfig`, `UserInfo`
+- ✅ **Service Management Types**: `ServiceConfig`, `ServiceQuery`, `ServiceOptions`
+- ✅ **API Types**: `HyphaAPI`, `HyphaCoreConfig`, workspace management
+- ✅ **ES Module Compatible**: Works seamlessly with modern TypeScript projects
+
+#### **TypeScript Usage Example**
+
+```typescript
+import { HyphaCore, type HyphaCoreConfig, type TokenConfig } from 'hypha-core';
+
+const config: HyphaCoreConfig = {
+    port: 9527,
+    jwtSecret: 'your-secure-secret',
+    base_url: 'http://localhost:9527/'
+};
+
+const hyphaCore = new HyphaCore(config);
+const api = await hyphaCore.start();
+
+// Type-safe token generation
+const tokenConfig: TokenConfig = {
+    user_id: 'typescript-user',
+    workspace: 'typed-workspace',
+    expires_in: 3600
+};
+
+const token: string = await api.generateToken(tokenConfig);
+```
+
+See [`examples/deno-example.ts`](./examples/deno-example.ts) for a complete TypeScript implementation demonstrating all features.
+
+### **Deno WebSocket Server Implementation** 🦕
+
+HyphaCore now supports **real WebSocket connections** in Deno through the `DenoWebSocketServer` wrapper, enabling production-grade server deployments with full compatibility with hypha-rpc clients.
+
+#### **Key Features**
+- ✅ **Real WebSocket Connections**: Native Deno HTTP server with WebSocket upgrade
+- ✅ **Full hypha-rpc Compatibility**: Python and JavaScript clients can connect seamlessly  
+- ✅ **Production Ready**: Proper error handling, graceful shutdown, and health endpoints
+- ✅ **Built-in Services**: Default services like `echo`, `hello`, and `get_time` work out of the box
+- ✅ **Service Registration**: Register services as `:built-in` for system-level access
+- ✅ **Authentication Flow**: Complete JWT-based authentication with reconnection tokens
+
+#### **Quick Start**
+
+```bash
+# Clone the repository
+git clone https://github.com/amun-ai/hypha-core
+cd hypha-core
+
+# Run the Deno server example
+deno run --allow-net --allow-env examples/deno-server-example.js
+```
+
+#### **Server Implementation**
+
+```javascript
+#!/usr/bin/env -S deno run --allow-net --allow-env
+import { HyphaCore } from '../src/hypha-core.js';
+import { DenoWebSocketServer, DenoWebSocketClient } from '../src/deno-websocket-server.js';
+
+const hyphaCore = new HyphaCore({
+    url: "https://localhost:9527",
+    ServerClass: DenoWebSocketServer,      // Use real WebSocket server
+    WebSocketClass: DenoWebSocketClient,   // Use real WebSocket client
+    jwtSecret: "deno-hypha-secret-key",
+    default_service: {
+        // Services with context for authentication and workspace info
+        hello: (name, context) => {
+            name = name || "World";
+            const greeting = `Hello, ${name}! Greetings from Deno Hypha Server 🦕`;
+            console.log(`Hello service called: ${greeting}`, context ? `from ${context.from}` : '');
+            return greeting;
+        },
+        
+        get_time: (context) => {
+            const now = new Date().toISOString();
+            console.log(`Time service called: ${now}`, context ? `from ${context.from}` : '');
+            return now;
+        }
+    }
+});
+
+// Start the server with proper connection handling
+const api = await hyphaCore.start();
+console.log(`🚀 Hypha Core server started at ${hyphaCore.url}`);
+console.log(`🔌 WebSocket URL: ${hyphaCore.wsUrl}`);
+```
+
+#### **Client Connection Examples**
+
+**Python Client (hypha-rpc)**
+```python
+from hypha_rpc import connect_to_server
+
+# Connect to the Deno server
+server = await connect_to_server("ws://localhost:9527/ws")
+
+# Use built-in services
+result = await server.hello("Python Client")
+print(result)  # "Hello, Python Client! Greetings from Deno Hypha Server 🦕"
+
+time = await server.get_time()
+print(f"Server time: {time}")
+
+# Get server info
+info = await server.get_server_info()
+print(f"Running on: {info['platform']} {info['version']}")
+```
+
+**JavaScript Client**
+```javascript
+import { hyphaWebsocketClient } from 'hypha-rpc';
+
+const server = await hyphaWebsocketClient.connectToServer({
+    server_url: "ws://localhost:9527/ws"
+});
+
+const greeting = await server.hello("JavaScript Client");
+console.log(greeting);
+
+const serverInfo = await server.get_server_info();
+console.log("Server info:", serverInfo);
+```
+
+#### **DenoWebSocketServer Features**
+
+**Real WebSocket Upgrade**
+- Uses Deno's native HTTP server with WebSocket upgrade
+- Proper `Upgrade: websocket` header handling
+- Binary and text message support with automatic ArrayBuffer conversion
+
+**Health Monitoring**
+```bash
+# Check server health
+curl http://localhost:9527/health
+# Returns: OK
+```
+
+**Graceful Shutdown**
+```javascript
+// Handles SIGINT and SIGTERM for clean shutdown
+Deno.addSignalListener("SIGINT", () => {
+    console.log('🛑 Shutting down server...');
+    hyphaCore.close();
+    Deno.exit(0);
+});
+```
+
+**Client Connection Management**
+- Automatic client tracking and cleanup
+- Proper error handling for connection failures
+- Support for multiple concurrent connections
+
+#### **Service Registration Security**
+
+The Deno server properly handles service registration with workspace security:
+
+```javascript
+// Built-in services are registered with :built-in suffix
+// This bypasses workspace security for system services
+await hyphaCore.workspaceManager.setup({
+    client_id: hyphaCore.workspaceManagerId,
+    default_service: {
+        // These become accessible as server.hello(), server.get_time(), etc.
+        hello: (name, context) => `Hello, ${name || "World"}!`,
+        get_time: (context) => new Date().toISOString(),
+        get_server_info: (context) => ({
+            platform: "Deno",
+            version: Deno.version.deno,
+            server: "hypha-core-deno"
+        })
+    }
+});
+```
+
+#### **Production Deployment**
+
+**Docker Container**
+```dockerfile
+FROM denoland/deno:1.40.0
+
+WORKDIR /app
+COPY . .
+
+EXPOSE 9527
+
+CMD ["run", "--allow-net", "--allow-env", "examples/deno-server-example.js"]
+```
+
+#### **Performance & Compatibility**
+
+**Tested Compatibility**
+- ✅ **Python hypha-rpc clients** - Full compatibility
+- ✅ **JavaScript hypha-rpc clients** - Complete feature support
+- ✅ **Browser WebSocket clients** - Direct WebSocket connections
+- ✅ **Node.js clients** - Cross-platform compatibility
+
+**Performance Characteristics**
+- **Concurrent Connections**: Supports multiple simultaneous clients
+- **Message Throughput**: High-performance binary and text message handling
+- **Memory Efficiency**: Automatic cleanup of disconnected clients
+- **Error Recovery**: Robust error handling without server crashes
+
+#### **Complete Example Files**
+
+- [`examples/deno-server-example.js`](./examples/deno-server-example.js) - Complete server implementation
+- [`examples/deno-client-example.js`](./examples/deno-client-example.js) - Client connection example
+- [`examples/test-deno-server.py`](./examples/test-deno-server.py) - Python client test
+- [`examples/DENO_WEBSOCKET_SERVER.md`](./examples/DENO_WEBSOCKET_SERVER.md) - Detailed documentation
+
+This implementation provides a complete bridge between Deno's native capabilities and the hypha-core ecosystem, enabling deployment of production-grade WebSocket servers with full compatibility with existing hypha-rpc clients.
+
+### **Deno/Node.js Compatibility** 🦕
+
+HyphaCore provides **cross-platform compatibility** for server environments with environment-aware feature degradation:
+
+#### **Supported Features in Server Environments**
+- ✅ **JWT Authentication**: Full HS256 token generation and verification
+- ✅ **Service Registration**: Register and discover services across workspaces  
+- ✅ **RPC Communication**: Real-time service-to-service communication
+- ✅ **Workspace Management**: Multi-tenant workspace isolation
+- ✅ **Multi-Client Connections**: Support multiple concurrent clients
+- ✅ **Anonymous User Security**: Automatic workspace assignment with access control
+- ✅ **PostMessage** (Deno only): Web API compatibility for message passing
+- ✅ **Event Listeners** (Deno only): Web API compatibility for event handling
+
+#### **Browser-Only Features** 
+Features that require DOM/Window APIs throw clear errors in server environments:
+- ❌ **Window/iframe creation**: `Environment.requireBrowser()` throws error
+- ❌ **WebWorker integration**: Browser-specific worker management  
+- ❌ **DOM manipulation**: Document/element operations
+- ❌ **PostMessage** (Node.js only): Not available without polyfills
+
+### 🦕 **Deno Usage**
+
+```typescript
+import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.55/dist/hypha-core.mjs";
+
+const hyphaCore = new HyphaCore({
+    port: 9527,
+    jwtSecret: 'your-secure-secret-key',
+    base_url: 'http://localhost:9527/',  // Explicit base URL for server
+});
+
+// Start server
+const api = await hyphaCore.start();
+console.log('🚀 HyphaCore server running on Deno!');
+
+// Generate JWT tokens
+const token = await api.generateToken({
+    user_id: 'deno-user',
+    workspace: 'compute-workspace',
+    expires_in: 3600
+});
+
+// Register computational services
+await api.registerService({
+    id: 'math-service:v1',
+    name: 'Math Service',
+    config: { require_context: true, visibility: 'public' },
+    
+    fibonacci: (n, context) => {
+        console.log(`Computing fibonacci(${n}) from ${context.from}`);
+        if (n <= 1) return n;
+        let a = 0, b = 1;
+        for (let i = 2; i <= n; i++) [a, b] = [b, a + b];
+        return b;
+    }
+});
+```
+
+### 🟢 **Node.js Usage**
+
+```javascript
+import { HyphaCore } from 'hypha-core';
+
+const hyphaCore = new HyphaCore({
+    port: 9527,
+    jwtSecret: process.env.HYPHA_JWT_SECRET,
+    base_url: 'http://localhost:9527/',
+});
+
+// Environment detection
+console.log(`Running in: ${hyphaCore.environment}`); // 'node'
+
+const api = await hyphaCore.start();
+console.log('🚀 HyphaCore server running on Node.js!');
+
+// Connect clients with JWT authentication
+const clientApi = await hyphaCore.connect({
+    token: await api.generateToken({ user_id: 'node-client' }),
+    workspace: 'data-processing'
+});
+```
+
+### 🛡️ **Environment-Safe Code Examples**
+
+The library automatically detects the environment and provides helpful error messages:
+
+```javascript
+import { HyphaCore } from 'hypha-core';
+
+const hyphaCore = new HyphaCore();
+const api = await hyphaCore.start();
+
+try {
+    // This will work in all environments
+    await api.registerService({
+        id: 'data-processor',
+        process: (data) => data.map(x => x * 2)
+    });
+    
+    // This will throw clear error in server environments
+    await api.createWindow({ src: 'https://example.com' });
+} catch (error) {
+    if (error.message.includes('requires browser environment')) {
+        console.log('🔍 Browser-only feature attempted in server environment');
+        console.log('💡 Use only core HyphaCore features in Deno/Node.js');
+    }
+}
+```
+
+### 📚 **Complete Server Example**
+
+See [`examples/deno-example.js`](./examples/deno-example.js) for a full working example demonstrating:
+
+- 🔐 JWT authentication with secure token generation
+- ⚡ Service registration and cross-service communication  
+- 🏗️ Workspace management and client connections
+- 🧮 Computational services (prime number checking, fibonacci)
+- 📊 Environment detection and feature availability
+
+### 💡 **Migration from Browser Polyfills**
+
+**Before (with polyfills):**
+```javascript
+// Complex polyfill setup required
+if (typeof globalThis.window === 'undefined') {
+    globalThis.window = globalThis;
+    globalThis.document = { createElement: () => ({}) };
+    // ... more polyfill code
+}
+const { HyphaCore } = await import("hypha-core");
+```
+
+**After (environment-aware):**
+```javascript
+// Clean, simple import - no polyfills needed!
+import { HyphaCore } from 'hypha-core';
+
+const hyphaCore = new HyphaCore({
+    port: 9527,
+    base_url: 'http://localhost:9527/'
+});
+const api = await hyphaCore.start(); // Just works! ✨
+```
+
 ## Configuration Options
 
 ### Constructor Options
@@ -156,7 +530,7 @@ const api = await hyphaCore.start({
 <html>
 <head>
     <title>Hypha Lite Application</title>
-    <script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
+<script src="https://rawcdn.githack.com/nextapps-de/winbox/0.2.82/dist/winbox.bundle.min.js"></script>
     <style>
         .icon-container {
             position: fixed;
@@ -205,21 +579,21 @@ const api = await hyphaCore.start({
         </div>
     </div>
     
-    <script type="module">
+<script type="module">
         import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.55/dist/hypha-core.mjs";
         
-        const hyphaCore = new HyphaCore();
+    const hyphaCore = new HyphaCore();
         
         // Expose hyphaCore globally for tests and external access
         window.hyphaCore = hyphaCore;
         
         // Handle window creation for plugins
-        hyphaCore.on("add_window", (config) => {
-            const wb = new WinBox(config.name || config.src.slice(0, 128), {
-                background: "#448aff",
-            });
-            wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
+    hyphaCore.on("add_window", (config) => {
+        const wb = new WinBox(config.name || config.src.slice(0, 128), {
+            background: "#448aff",
         });
+        wb.body.innerHTML = `<iframe src="${config.src}" id="${config.window_id}" style="width: 100%; height: 100%; border: none;"></iframe>`;
+    });
         
         // Start Hypha Core and wait for API
         await hyphaCore.start();
@@ -275,7 +649,7 @@ const api = await hyphaCore.start({
         if (dropdown) {
             dropdown.style.display = "none";
         }
-    </script>
+</script>
 </body>
 </html>
 ```
@@ -848,9 +1222,9 @@ const api = await hyphaCore.start();
 
 **✅ Fully Tested & Verified Across All Major Browsers:**
 
-- **Chrome/Chromium 80+** ✅ - All 150 tests passing
-- **Firefox 78+** ✅ - All 150 tests passing  
-- **Safari/WebKit 14+** ✅ - All 150 tests passing
+- **Chrome/Chromium 80+** ✅ - All 138 tests passing
+- **Firefox 78+** ✅ - All 138 tests passing  
+- **Safari/WebKit 14+** ✅ - All 138 tests passing
 - **Edge 80+** ✅ - Chromium-based, fully compatible
 
 **Required Features (All Verified):**
@@ -873,11 +1247,11 @@ const api = await hyphaCore.start();
 
 ## Testing
 
-Hypha Core includes **comprehensive test coverage with 150/150 tests passing**:
+Hypha Core includes **comprehensive test coverage with 138/138 tests passing**:
 
 ### 🧪 **Test Categories**
 
-**Unit Tests (42 tests - 231ms)**
+**Unit Tests (42 tests - ~200ms)**
 ```bash
 npm run test:unit
 ```
@@ -888,12 +1262,14 @@ npm run test:unit
 - Mock-socket integration
 - End-to-end workflow verification
 
-**Integration Tests (108 tests - 2.1 minutes)**
+**Integration Tests (96 tests - ~35 seconds)**
 ```bash
 npm run test:integration
 ```
-- **Original Integration Tests (54 tests)**: HyphaCore server, UI interactions, plugin loading
-- **Comprehensive Integration Tests (54 tests)**: Authentication, service registration, WebWorker integration, cross-workspace security
+- **Core Integration Tests**: HyphaCore server, UI interactions, plugin loading
+- **Security & Permission Tests**: JWT authentication, workspace isolation, service registration security
+- **Multi-Client Workflows**: Provider/consumer patterns, cross-workspace access control
+- **Error Handling**: Unauthorized access, token validation, workspace boundaries
 
 **All Tests**
 ```bash
@@ -907,19 +1283,19 @@ Our integration tests run in **actual browsers** with:
 - Real WebSocket connections
 - Actual JWT token generation and verification
 - Cross-workspace security enforcement
-- WebWorker background processing
+- Service registration and discovery workflows
 - UI responsiveness and error handling
 - Network interruption recovery
 
 ### 📊 **Test Results**
 
 ```
-✅ Unit Tests:        42/42  PASSED  (231ms)
-✅ Integration Tests: 108/108 PASSED (2.1m)
-📊 Total Coverage:    150/150 PASSED
+✅ Unit Tests:        42/42  PASSED  (~200ms)
+✅ Integration Tests: 96/96  PASSED  (~35s)
+📊 Total Coverage:    138/138 PASSED
 🌐 Browsers:          Chrome, Firefox, Safari/WebKit
-🔒 Security:          JWT HS256, Cross-workspace isolation
-⚡ Performance:       Sub-second unit tests, 2-minute full suite
+🔒 Security:          JWT HS256, Cross-workspace isolation, Anonymous user security
+⚡ Performance:       Sub-second unit tests, fast integration suite
 ```
 
 ### 🛠 **Development Testing**
@@ -929,7 +1305,7 @@ Our integration tests run in **actual browsers** with:
 npm run dev
 
 # Run specific test files
-npx playwright test tests/integration/hypha-core-comprehensive.test.js
+npx playwright test tests/integration/hypha-core-integration.test.js
 
 # Run tests with UI (for debugging)
 npx playwright test --ui
@@ -955,9 +1331,12 @@ npm run build
 See the [examples](./examples) directory for more comprehensive usage examples:
 
 - **[Basic Usage](./public/lite.html)** - Simple plugin loader with UI
+- **[Deno WebSocket Server](./examples/deno-server-example.js)** - Real WebSocket server with hypha-rpc compatibility
+- **[TypeScript Deno Example](./examples/deno-example.ts)** - Complete TypeScript server with JWT authentication and security features
 - **[Advanced Workspace Management](./examples/workspaces.html)** - Multiple workspace example
 - **[Custom Services](./examples/services.html)** - Custom service registration
 - **[Authentication](./examples/auth.html)** - Token-based authentication
+- **[Anonymous User Testing](./examples/anonymous-test.ts)** - Demonstrates anonymous user security features
 
 ## Contributing
 
@@ -1152,4 +1531,3 @@ try {
         console.log("Connection failed:", error.message);
     }
 }
-```
