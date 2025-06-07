@@ -394,10 +394,12 @@ class HyphaCore extends MessageEmitter {
             }
 
             // Check for legacy imjoy-rpc clients (those passing auth via URL parameters)
+            // Allow legacy clients for "default" workspace to support imjoy apps
             if (authConfig.workspace === undefined && authConfig.client_id === undefined && authConfig.token === undefined) {
-                console.warn("Rejecting legacy imjoy-rpc client");
-                await this._disconnectWebsocket(websocket, "Connection rejected, please upgrade to `hypha-rpc` which passes authentication information in the first message", 1008);
-                return;
+                // For legacy clients, assume they want to connect to "default" workspace
+                console.warn("Accepting legacy imjoy-rpc client for default workspace");
+                authConfig.workspace = "default";
+                authConfig.client_id = "client-" + randId();
             }
 
             // Authenticate user
@@ -429,6 +431,19 @@ class HyphaCore extends MessageEmitter {
     async _authenticateUser(authConfig) {
         let userInfo;
         let workspace = authConfig.workspace;
+
+        // Special case: "default" workspace allows anonymous access without any authentication
+        if (workspace === "default") {
+            const anonymousUserId = "anonymous-" + randId();
+            userInfo = { 
+                id: anonymousUserId, 
+                is_anonymous: true, 
+                email: "anonymous@imjoy.io",
+                roles: [],
+                scopes: []
+            };
+            return { userInfo, workspace: "default" };
+        }
 
         if (authConfig.token) {
             try {
@@ -513,8 +528,13 @@ class HyphaCore extends MessageEmitter {
     }
 
     async _checkClientPermissions(clientId, workspace, userInfo) {
+        // Special case: "default" workspace allows unrestricted access
+        if (workspace === "default") {
+            return;
+        }
+        
         // Basic permission check - in full implementation would be more comprehensive
-        if (workspace === "public" || workspace === "default") {
+        if (workspace === "public") {
             // Public workspaces are generally accessible
             return;
         }

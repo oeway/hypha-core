@@ -189,10 +189,15 @@ export class Workspace {
         service.config = service.config || {};
         service.config.workspace = ws;
         
-        // Security check: only root user can register services in public and default workspaces
-        // Exception: built-in services can be registered by users in any workspace
-        const isBuiltInService = service.id.includes(":built-in");
-        if ((ws === "public" || ws === "default") && !clientId.endsWith("/root") && !isBuiltInService) {
+        // Store the original service ID before modification for security checks
+        const originalServiceId = service.id;
+        
+        // Security check: only root user can register services in public workspace
+        // Exception: default workspace allows all registrations, built-in services and legitimate default services can be registered by users in any workspace
+        const isBuiltInService = originalServiceId.includes(":built-in");
+        // A genuine default service is one where the service ID is exactly "default" (e.g., client-123:default)
+        const isDefaultService = originalServiceId.split(":")[1] === "default";
+        if (ws === "public" && !clientId.endsWith("/root") && !isBuiltInService && !isDefaultService) {
             throw new Error(`Access denied: Only root user can register services in '${ws}' workspace. Current client: ${clientId}`);
         }
         
