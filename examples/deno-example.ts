@@ -372,7 +372,9 @@ async function main(): Promise<void> {
         console.log('  ✅ Token expiration handling');
         console.log('  ✅ Full TypeScript support with type safety');
 
-        console.log('\n🔄 Server is running... Press Ctrl+C to stop');
+        console.log('\n🛑 Shutting down server automatically...');
+        hyphaCore.close();
+        console.log('✅ Server stopped successfully!');
         
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
