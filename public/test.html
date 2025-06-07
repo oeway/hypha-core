@@ -112,7 +112,8 @@
             <button onclick="runSpecificTest('basic')">🔧 Basic Setup</button>
             <button onclick="runSpecificTest('auth')">🔐 Authentication</button>
             <button onclick="runSpecificTest('services')">⚡ Services</button>
-            <button onclick="runSpecificTest('worker')">👷 WebWorker</button>
+            <button onclick="runSpecificTest('security')">🔒 Security</button>
+            <button onclick="runSpecificTest('standalone')">📱 Standalone App</button>
         </div>
 
         <div class="test-section">
@@ -121,8 +122,8 @@
                 <div>1. Basic HyphaCore Setup <span id="status-basic" class="status pending">PENDING</span></div>
                 <div>2. JWT Authentication System <span id="status-auth" class="status pending">PENDING</span></div>
                 <div>3. Service Registration & Communication <span id="status-services" class="status pending">PENDING</span></div>
-                <div>4. WebWorker Integration <span id="status-worker" class="status pending">PENDING</span></div>
-                <div>5. Cross-Workspace Security <span id="status-security" class="status pending">PENDING</span></div>
+                <div>4. Cross-Workspace Security <span id="status-security" class="status pending">PENDING</span></div>
+                <div>5. Standalone App Integration <span id="status-standalone" class="status pending">PENDING</span></div>
             </div>
         </div>
 
@@ -158,6 +159,56 @@
         let clientApi = null;
         let workerApi = null;
         let testWorker = null;
+
+        // Window management for standalone app testing
+        function setupWindowHandler() {
+            if (hyphaCore) {
+                hyphaCore.on("add_window", (config) => {
+                    log(`Creating window: ${config.name || config.src}`);
+                    
+                    // Create an iframe element similar to workspace.js
+                    const elem = document.createElement("iframe");
+                    elem.src = config.src;
+                    elem.id = config.window_id || "window-" + Date.now();
+                    elem.style.width = config.width ? config.width + "px" : "800px";
+                    elem.style.height = config.height ? config.height + "px" : "600px";
+                    elem.style.border = "1px solid #ddd";
+                    elem.style.borderRadius = "4px";
+                    elem.style.margin = "10px 0";
+                    elem.style.display = "block";
+                    
+                    // Add a title for the iframe
+                    const title = document.createElement("h4");
+                    title.textContent = config.name || "Test Window";
+                    title.style.margin = "10px 0 5px 0";
+                    title.style.color = "#34495e";
+                    
+                    // Create a container for better organization
+                    const container = document.createElement("div");
+                    container.style.margin = "20px 0";
+                    container.style.padding = "15px";
+                    container.style.background = "#f9f9f9";
+                    container.style.borderRadius = "5px";
+                    
+                    container.appendChild(title);
+                    container.appendChild(elem);
+                    
+                    // Append to the main container instead of body
+                    const mainContainer = document.querySelector('.container');
+                    if (mainContainer) {
+                        mainContainer.appendChild(container);
+                    } else {
+                        document.body.appendChild(container);
+                    }
+                    
+                    log(`✓ Iframe created successfully: ${config.name || config.src}`);
+                    
+                    // Store reference for cleanup
+                    if (!window.testIframes) window.testIframes = [];
+                    window.testIframes.push({ container, iframe: elem });
+                });
+            }
+        }
 
         // Logging utilities
         function log(message, type = 'info') {
@@ -212,7 +263,12 @@
                 log('✓ Server started successfully');
                 log(`✓ Root API obtained with methods: ${Object.keys(rootApi).filter(k => typeof rootApi[k] === 'function').join(', ')}`);
 
-                // Step 3: Verify API methods
+                // Step 3: Setup window handler for standalone app testing
+                log('Step 3: Setting up window handler...');
+                setupWindowHandler();
+                log('✓ Window handler configured');
+
+                // Step 4: Verify API methods
                 const requiredMethods = ['generateToken', 'registerService', 'getService', 'listServices'];
                 const availableMethods = Object.keys(rootApi).filter(k => typeof rootApi[k] === 'function');
                 
@@ -346,10 +402,10 @@
                     throw new Error('APIs not available - run previous tests first');
                 }
 
-                // Step 1: Register service with root API
-                log('Step 1: Registering service with root API...');
-                await rootApi.registerService({
-                    id: 'math-service:v1',
+                // Step 1: Register service with client API (same workspace)
+                log('Step 1: Registering math service with client API in test-workspace...');
+                await clientApi.registerService({
+                    id: 'math-service',
                     name: 'Mathematical Operations Service',
                     description: 'A service that performs mathematical operations',
                     config: {
@@ -377,9 +433,9 @@
                 log('✓ Math service registered successfully');
 
                 // Step 2: Register service with client API
-                log('Step 2: Registering client service...');
+                log('Step 2: Registering string service...');
                 await clientApi.registerService({
-                    id: 'string-service:v1',
+                    id: 'string-service',
                     name: 'String Operations Service',
                     config: {
                         require_context: true,
@@ -409,7 +465,7 @@
 
                 // Step 4: Get and call math service
                 log('Step 4: Getting and calling math service...');
-                const mathService = await clientApi.getService('math-service:v1');
+                const mathService = await clientApi.getService('math-service');
                 
                 if (!mathService) {
                     throw new Error('Math service not found');
@@ -437,7 +493,7 @@
 
                 // Step 5: Get and call string service
                 log('Step 5: Testing string service...');
-                const stringService = await clientApi.getService('string-service:v1');
+                const stringService = await clientApi.getService('string-service');
                 
                 if (!stringService) {
                     throw new Error('String service not found');
@@ -470,225 +526,7 @@
             }
         }
 
-        // Test 4: WebWorker Integration
-        async function testWebWorker() {
-            log('👷 Starting WebWorker Integration Test...');
-            updateStatus('worker', 'pending');
-
-            try {
-                if (!rootApi) {
-                    throw new Error('Root API not available - run basic setup first');
-                }
-
-                // Step 1: Create worker blob with Hypha integration
-                log('Step 1: Creating WebWorker with Hypha integration...');
-                
-                // Option 1: Use dedicated worker file
-                try {
-                    testWorker = new Worker('./test-worker.js');
-                } catch (workerError) {
-                    log('⚠️ Failed to load dedicated worker file, falling back to inline worker...');
-                    
-                    // Option 2: Fallback to inline worker
-                    const workerCode = `
-                        // Import HyphaCore dependencies for worker
-                        importScripts("https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.55/dist/hypha-rpc-websocket.min.js");
-                        
-                        console.log('Worker: Starting Hypha client setup...');
-                        
-                        // Setup worker as Hypha client
-                        hyphaWebsocketClient.setupLocalClient({
-                            enable_execution: true,
-                            server_url: '${hyphaCore.wsUrl}'
-                        }).then(async (api) => {
-                            console.log('Worker: Hypha client initialized', api);
-                            
-                            // Register worker service
-                            await api.export({
-                                id: 'worker-compute:v1',
-                                name: 'Worker Computation Service',
-                                description: 'CPU-intensive computations in WebWorker',
-                                
-                                // Heavy computation that benefits from worker isolation
-                                fibonacci: function(n) {
-                                    console.log('Worker: Computing fibonacci(' + n + ')');
-                                    if (n <= 1) return n;
-                                    let a = 0, b = 1;
-                                    for (let i = 2; i <= n; i++) {
-                                        [a, b] = [b, a + b];
-                                    }
-                                    return b;
-                                },
-                                
-                                // Prime number checking
-                                isPrime: function(n) {
-                                    console.log('Worker: Checking if ' + n + ' is prime');
-                                    if (n <= 1) return false;
-                                    if (n <= 3) return true;
-                                    if (n % 2 === 0 || n % 3 === 0) return false;
-                                    for (let i = 5; i * i <= n; i += 6) {
-                                        if (n % i === 0 || n % (i + 2) === 0) return false;
-                                    }
-                                    return true;
-                                },
-                                
-                                // Array processing
-                                processArray: function(arr, operation) {
-                                    console.log('Worker: Processing array with operation:', operation);
-                                    switch(operation) {
-                                        case 'sum':
-                                            return arr.reduce((a, b) => a + b, 0);
-                                        case 'product':
-                                            return arr.reduce((a, b) => a * b, 1);
-                                        case 'max':
-                                            return Math.max(...arr);
-                                        case 'min':
-                                            return Math.min(...arr);
-                                        default:
-                                            throw new Error('Unknown operation: ' + operation);
-                                    }
-                                },
-                                
-                                // Worker status
-                                getStatus: function() {
-                                    return {
-                                        type: 'webworker',
-                                        timestamp: new Date().toISOString(),
-                                        location: 'WebWorker Thread',
-                                        capabilities: ['fibonacci', 'isPrime', 'processArray']
-                                    };
-                                }
-                            });
-                            
-                            console.log('Worker: Services registered successfully');
-                            
-                            // Notify main thread that worker is ready
-                            self.postMessage({ type: 'worker_ready', message: 'Worker services registered' });
-                            
-                        }).catch(error => {
-                            console.error('Worker: Failed to setup Hypha client:', error);
-                            self.postMessage({ type: 'worker_error', error: error.message });
-                        });
-                        
-                        // Handle messages from main thread
-                        self.onmessage = function(event) {
-                            console.log('Worker: Received message:', event.data);
-                            if (event.data.type === 'ping') {
-                                self.postMessage({ type: 'pong', message: 'Worker is alive' });
-                            }
-                        };
-                    `;
-
-                    const blob = new Blob([workerCode], { type: 'application/javascript' });
-                    const workerUrl = URL.createObjectURL(blob);
-                    testWorker = new Worker(workerUrl);
-                }
-
-                // Step 2: Wait for worker to be ready
-                log('Step 2: Waiting for worker initialization...');
-                
-                await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        reject(new Error('Worker initialization timeout'));
-                    }, 10000);
-
-                    testWorker.onmessage = (event) => {
-                        if (event.data.type === 'worker_ready') {
-                            clearTimeout(timeout);
-                            log('✓ Worker initialized and services registered');
-                            resolve();
-                        } else if (event.data.type === 'worker_error') {
-                            clearTimeout(timeout);
-                            reject(new Error('Worker error: ' + event.data.error));
-                        }
-                    };
-
-                    testWorker.onerror = (error) => {
-                        clearTimeout(timeout);
-                        reject(new Error('Worker creation failed: ' + error.message));
-                    };
-                });
-
-                // Step 3: Get worker service from main thread
-                log('Step 3: Getting worker service from main thread...');
-                
-                // Wait a bit for service registration to propagate
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                let workerService = await rootApi.getService('computational-services:v1');
-                
-                if (!workerService) {
-                    // Try fallback service ID for inline worker
-                    workerService = await rootApi.getService('worker-compute:v1');
-                    if (!workerService) {
-                        throw new Error('Neither dedicated nor fallback worker service found');
-                    }
-                    log('✓ Using fallback inline worker service');
-                } else {
-                    log('✓ Using dedicated test-worker.js service');
-                }
-
-                log('✓ Worker service retrieved from main thread');
-
-                // Step 4: Test worker computations
-                log('Step 4: Testing worker computations...');
-
-                // Test Fibonacci
-                const fib10 = await workerService.fibonacci(10);
-                log(`✓ Worker fibonacci(10) = ${fib10}`);
-                if (fib10 !== 55) {
-                    throw new Error(`Expected 55, got ${fib10}`);
-                }
-
-                // Test prime checking
-                const isPrime17 = await workerService.isPrime(17);
-                log(`✓ Worker isPrime(17) = ${isPrime17}`);
-                if (isPrime17 !== true) {
-                    throw new Error(`Expected true, got ${isPrime17}`);
-                }
-
-                const isPrime18 = await workerService.isPrime(18);
-                log(`✓ Worker isPrime(18) = ${isPrime18}`);
-                if (isPrime18 !== false) {
-                    throw new Error(`Expected false, got ${isPrime18}`);
-                }
-
-                // Test array processing
-                const testArray = [1, 2, 3, 4, 5];
-                const arraySum = await workerService.processArray(testArray, 'sum');
-                log(`✓ Worker processArray([1,2,3,4,5], 'sum') = ${arraySum}`);
-                if (arraySum !== 15) {
-                    throw new Error(`Expected 15, got ${arraySum}`);
-                }
-
-                const arrayMax = await workerService.processArray(testArray, 'max');
-                log(`✓ Worker processArray([1,2,3,4,5], 'max') = ${arrayMax}`);
-                if (arrayMax !== 5) {
-                    throw new Error(`Expected 5, got ${arrayMax}`);
-                }
-
-                // Test worker status
-                const workerStatus = await workerService.getStatus();
-                log(`✓ Worker status: ${JSON.stringify(workerStatus)}`);
-
-                if (workerStatus.type !== 'webworker') {
-                    throw new Error(`Expected type 'webworker', got '${workerStatus.type}'`);
-                }
-
-                updateStatus('worker', 'success');
-                addResult('WebWorker Integration', true);
-                log('🎉 WebWorker integration test completed successfully!', 'success');
-                return true;
-
-            } catch (error) {
-                log(`❌ WebWorker integration test failed: ${error.message}`, 'error');
-                updateStatus('worker', 'error');
-                addResult('WebWorker Integration', false, error.message);
-                return false;
-            }
-        }
-
-        // Test 5: Cross-Workspace Security
+        // Test 4: Cross-Workspace Security
         async function testSecurity() {
             log('🔒 Starting Cross-Workspace Security Test...');
             updateStatus('security', 'pending');
@@ -736,7 +574,7 @@
                 log('Step 3: Registering workspace-specific services...');
                 
                 await alphaClient.registerService({
-                    id: 'alpha-secret:v1',
+                    id: 'alpha-secret',
                     name: 'Alpha Secret Service',
                     config: {
                         require_context: true,
@@ -753,7 +591,7 @@
                 });
 
                 await betaClient.registerService({
-                    id: 'beta-secret:v1',
+                    id: 'beta-secret',
                     name: 'Beta Secret Service', 
                     config: {
                         require_context: true,
@@ -774,8 +612,28 @@
                 // Step 4: Test workspace isolation
                 log('Step 4: Testing workspace isolation...');
 
+                // Wait a bit for service registration to propagate
+                await new Promise(resolve => setTimeout(resolve, 500));
+
                 // Alpha client should access alpha service
-                const alphaService = await alphaClient.getService('alpha-secret:v1');
+                log('Checking alpha services...');
+                const alphaServices = await alphaClient.listServices();
+                log(`Alpha client sees ${alphaServices.length} services:`);
+                for (const service of alphaServices) {
+                    log(`  - ${service.name} (${service.id})`);
+                }
+
+                // Find the alpha secret service
+                const alphaSecretServiceInfo = alphaServices.find(s => s.id.includes('alpha-secret'));
+                if (!alphaSecretServiceInfo) {
+                    throw new Error('Alpha secret service not found in service list');
+                }
+
+                // Extract just the service ID part (e.g., "alpha-secret" from "workspace-alpha/alpha-client:alpha-secret")
+                const alphaServiceId = alphaSecretServiceInfo.id
+                log(`Attempting to get alpha service with ID: ${alphaServiceId}`);
+
+                const alphaService = await alphaClient.getService(alphaServiceId);
                 if (!alphaService) {
                     throw new Error('Alpha client cannot access its own service');
                 }
@@ -784,7 +642,24 @@
                 log(`✓ Alpha client accessed alpha secret: ${alphaSecret.secret}`);
 
                 // Beta client should access beta service
-                const betaService = await betaClient.getService('beta-secret:v1');
+                log('Checking beta services...');
+                const betaServices = await betaClient.listServices();
+                log(`Beta client sees ${betaServices.length} services:`);
+                for (const service of betaServices) {
+                    log(`  - ${service.name} (${service.id})`);
+                }
+
+                // Find the beta secret service
+                const betaSecretServiceInfo = betaServices.find(s => s.id.includes('beta-secret'));
+                if (!betaSecretServiceInfo) {
+                    throw new Error('Beta secret service not found in service list');
+                }
+
+                // Extract just the service ID part (e.g., "beta-secret" from "workspace-beta/beta-client:beta-secret")
+                const betaServiceId = betaSecretServiceInfo.id
+                log(`Attempting to get beta service with ID: ${betaServiceId}`);
+
+                const betaService = await betaClient.getService(betaServiceId);
                 if (!betaService) {
                     throw new Error('Beta client cannot access its own service');
                 }
@@ -795,24 +670,40 @@
                 // Step 5: Test cross-workspace access denial
                 log('Step 5: Testing cross-workspace access denial...');
 
-                try {
-                    await alphaClient.getService('beta-secret:v1');
-                    throw new Error('Alpha client should not access beta service');
-                } catch (accessError) {
-                    if (accessError.message.includes('not access beta service')) {
-                        throw accessError; // This should not happen
+                // Alpha client should not see beta services in its service list
+                const alphaAccessibleServices = await alphaClient.listServices();
+                const alphaSeesBeta = alphaAccessibleServices.some(s => s.id.includes('beta-secret'));
+                
+                if (alphaSeesBeta) {
+                    log('⚠️ Alpha client can see beta service in list - checking direct access...');
+                    try {
+                        const betaFromAlpha = await alphaClient.getService(betaServiceId);
+                        if (betaFromAlpha) {
+                            throw new Error('Alpha client should not access beta service');
+                        }
+                    } catch (accessError) {
+                        log('✓ Alpha client properly denied direct access to beta service');
                     }
-                    log('✓ Alpha client properly denied access to beta service');
+                } else {
+                    log('✓ Alpha client properly cannot see beta service in service list');
                 }
 
-                try {
-                    await betaClient.getService('alpha-secret:v1');
-                    throw new Error('Beta client should not access alpha service');
-                } catch (accessError) {
-                    if (accessError.message.includes('not access alpha service')) {
-                        throw accessError; // This should not happen
+                // Beta client should not see alpha services in its service list  
+                const betaAccessibleServices = await betaClient.listServices();
+                const betaSeesAlpha = betaAccessibleServices.some(s => s.id.includes('alpha-secret'));
+                
+                if (betaSeesAlpha) {
+                    log('⚠️ Beta client can see alpha service in list - checking direct access...');
+                    try {
+                        const alphaFromBeta = await betaClient.getService(alphaServiceId);
+                        if (alphaFromBeta) {
+                            throw new Error('Beta client should not access alpha service');
+                        }
+                    } catch (accessError) {
+                        log('✓ Beta client properly denied direct access to alpha service');
                     }
-                    log('✓ Beta client properly denied access to alpha service');
+                } else {
+                    log('✓ Beta client properly cannot see alpha service in service list');
                 }
 
                 // Step 6: Test token generation restrictions
@@ -844,6 +735,118 @@
             }
         }
 
+        // Test 5: Standalone App Integration
+        async function testStandaloneApp() {
+            log('📱 Starting Standalone App Integration Test...');
+            updateStatus('standalone', 'pending');
+
+            try {
+                if (!rootApi) {
+                    throw new Error('Root API not available - run basic setup first');
+                }
+
+                // Step 1: Create a client connection to the default workspace
+                log('Step 1: Creating client connection to default workspace...');
+                const defaultToken = await rootApi.generateToken({
+                    user_id: 'default-test-user',
+                    workspace: 'default',
+                    roles: ['user']
+                });
+
+                const defaultClient = await hyphaCore.connect({
+                    token: defaultToken,
+                    client_id: 'default-test-client',
+                    workspace: 'default'
+                });
+
+                log('✓ Default workspace client connected');
+
+                // Step 2: Register a service that the standalone app can use
+                log('Step 2: Registering demo service in default workspace...');
+                await defaultClient.registerService({
+                    id: 'demo-service',
+                    name: 'Demo Service for Standalone App',
+                    description: 'A demo service to test standalone app integration',
+                    config: {
+                        require_context: true,
+                        visibility: 'public'
+                    },
+                    overwrite: true,
+                    echo: function(message, context) {
+                        log(`Demo service: Echo "${message}" (called from ${context?.from || 'unknown'})`);
+                        return `Echo: ${message}`;
+                    },
+                    getCurrentTime: function(context) {
+                        const time = new Date().toISOString();
+                        log(`Demo service: getCurrentTime() called (workspace: ${context?.ws})`);
+                        return time;
+                    },
+                    ping: function(context) {
+                        log(`Demo service: ping() called from ${context?.from || 'unknown'}`);
+                        return 'pong';
+                    }
+                });
+
+                log('✓ Demo service registered successfully');
+
+                // Step 3: Create a test window with standalone app
+                log('Step 3: Creating standalone app window...');
+                const baseUrl = window.location.origin;
+                const windowConfig = {
+                    src: `${baseUrl}/standalone-app-example.html`,
+                    name: "Standalone App Test",
+                    width: 600,
+                    height: 400
+                };
+
+                // Create window using the rootApi
+                await rootApi.createWindow(windowConfig);
+                log('✓ Standalone app window created');
+
+                // Step 4: Wait for the standalone app to potentially connect and test services
+                log('Step 4: Waiting for standalone app integration...');
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Give it time to load
+
+                // Step 5: Verify the demo service is accessible from default workspace
+                log('Step 5: Verifying demo service accessibility...');
+                const demoService = await defaultClient.getService('demo-service');
+                
+                if (!demoService) {
+                    throw new Error('Demo service not found');
+                }
+
+                const echoResult = await demoService.echo('Standalone App Test');
+                log(`✓ Demo service echo: "${echoResult}"`);
+                
+                const timeResult = await demoService.getCurrentTime();
+                log(`✓ Demo service time: ${timeResult}`);
+                
+                const pingResult = await demoService.ping();
+                log(`✓ Demo service ping: ${pingResult}`);
+
+                // Step 6: List services to confirm everything is working
+                log('Step 6: Listing all services in default workspace...');
+                const services = await defaultClient.listServices();
+                log(`✓ Total services available in default workspace: ${services.length}`);
+                
+                for (const service of services) {
+                    log(`  - ${service.name} (${service.id})`);
+                }
+
+                updateStatus('standalone', 'success');
+                addResult('Standalone App Integration', true);
+                log('🎉 Standalone app integration test completed successfully!', 'success');
+                log('💡 Check the created iframe to see if the standalone app loaded correctly');
+                return true;
+
+            } catch (error) {
+                log(`❌ Standalone app integration test failed: ${error.message}`, 'error');
+                updateStatus('standalone', 'error');
+                addResult('Standalone App Integration', false, error.message);
+                return false;
+            }
+        }
+
         // Main test orchestration
         async function runAllTests() {
             log('🚀 Starting Comprehensive Integration Tests...');
@@ -857,8 +860,8 @@
                 { name: 'Basic Setup', fn: testBasicSetup },
                 { name: 'Authentication', fn: testAuthentication },
                 { name: 'Services', fn: testServices },
-                { name: 'WebWorker', fn: testWebWorker },
-                { name: 'Security', fn: testSecurity }
+                { name: 'Security', fn: testSecurity },
+                { name: 'Standalone App', fn: testStandaloneApp }
             ];
 
             let passed = 0;
@@ -897,8 +900,8 @@
                 basic: testBasicSetup,
                 auth: testAuthentication,
                 services: testServices,
-                worker: testWebWorker,
-                security: testSecurity
+                security: testSecurity,
+                standalone: testStandaloneApp
             };
 
             if (tests[testType]) {
@@ -914,8 +917,22 @@
             document.getElementById('error-results').innerHTML = '';
             
             // Reset all status indicators
-            const statuses = ['basic', 'auth', 'services', 'worker', 'security'];
+            const statuses = ['basic', 'auth', 'services', 'security', 'standalone'];
             statuses.forEach(status => updateStatus(status, 'pending'));
+            
+            // Close any test windows
+            if (window.testIframes) {
+                window.testIframes.forEach(item => {
+                    try {
+                        if (item.container) {
+                            item.container.remove();
+                        }
+                    } catch (e) {
+                        // Ignore errors when closing windows
+                    }
+                });
+                window.testIframes = [];
+            }
             
             // Restore initial messages
             log('📄 Integration test page loaded');

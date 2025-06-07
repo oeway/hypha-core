@@ -16,7 +16,7 @@ hyphaWebsocketClient.setupLocalClient({
     
     // Register computational services
     const exportedServices = await api.export({
-        id: 'computational-services:v1',
+        id: 'computational-services',
         name: 'Computational Services',
         description: 'CPU-intensive computations optimized for WebWorker environment',
         

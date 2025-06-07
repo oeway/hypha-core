@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Standalone Hypha App Example</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .status.connected {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 30px 0;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .output-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.26/dist/hypha-rpc-websocket.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Standalone Hypha App</h1>
+        <div class="status connecting" id="status">Connecting to Hypha Core...</div>
+        
+        <div class="controls">
+            <button onclick="performCalculation()" id="calcBtn" disabled>🧮 Calculate Sum</button>
+            <button onclick="sendNotification()" id="notifyBtn" disabled>📢 Send Notification</button>
+            <button onclick="getSystemInfo()" id="infoBtn" disabled>ℹ️ System Info</button>
+            <button onclick="testExportedServices()" id="testBtn" disabled>🔧 Test Services</button>
+            <button onclick="clearOutput()" id="clearBtn">🗑️ Clear Output</button>
+        </div>
+        
+        <div class="input-group">
+            <label for="messageInput">Send Custom Message:</label>
+            <input type="text" id="messageInput" placeholder="Enter a message to process..." value="Hello from standalone app!">
+            <button onclick="sendCustomMessage()" id="customBtn" disabled style="margin-top: 10px; width: 100%;">📤 Send Message</button>
+        </div>
+        
+        <div id="output" class="output">
+            <div class="output-item">
+                <div class="timestamp">System</div>
+                <div>Welcome to the Standalone Hypha App example! This app demonstrates how to:</div>
+                <ul>
+                    <li>Connect to Hypha Core using hyphaWebsocketClient</li>
+                    <li>Export services that can be called by the parent</li>
+                    <li>Call services provided by the parent Hypha Core</li>
+                    <li>Handle connection errors gracefully</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let api = null;
+        let isConnected = false;
+        
+        // Connect to Hypha Core
+        hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (hyphaApi) => {
+            api = hyphaApi;
+            isConnected = true;
+            console.log("Connected to Hypha Core", api);
+            
+            // Export services that the parent can call
+            await api.export({
+                name: "Standalone App Services",
+                id: "standalone-app-services",
+                
+                async processData(data) {
+                    console.log("Processing data:", data);
+                    let result;
+                    
+                    if (Array.isArray(data)) {
+                        result = data.map(x => typeof x === 'number' ? x * x : x);
+                    } else if (typeof data === 'string') {
+                        result = data.toUpperCase() + " (processed by standalone app)";
+                    } else {
+                        result = { processed: true, original: data, timestamp: new Date().toISOString() };
+                    }
+                    
+                    updateOutput(`Data processed: ${JSON.stringify(result)}`, "success");
+                    return result;
+                },
+                
+                async updateUI(config) {
+                    console.log("Updating UI:", config);
+                    if (config.title) {
+                        document.querySelector('h1').innerHTML = `🚀 ${config.title}`;
+                    }
+                    if (config.message) {
+                        updateOutput(`UI Update: ${config.message}`, "info");
+                    }
+                    if (config.style) {
+                        Object.assign(document.body.style, config.style);
+                    }
+                    return "UI updated successfully";
+                },
+                
+                async getAppState() {
+                    const state = {
+                        title: document.querySelector('h1').textContent,
+                        timestamp: new Date().toISOString(),
+                        status: "running",
+                        connected: isConnected,
+                        outputItemsCount: document.querySelectorAll('.output-item').length,
+                        url: window.location.href
+                    };
+                    updateOutput(`App state requested: ${JSON.stringify(state, null, 2)}`, "info");
+                    return state;
+                },
+                
+                async performMath(operation, ...numbers) {
+                    console.log(`Math operation: ${operation}`, numbers);
+                    let result;
+                    
+                    switch(operation) {
+                        case 'add':
+                            result = numbers.reduce((a, b) => a + b, 0);
+                            break;
+                        case 'multiply':
+                            result = numbers.reduce((a, b) => a * b, 1);
+                            break;
+                        case 'average':
+                            result = numbers.reduce((a, b) => a + b, 0) / numbers.length;
+                            break;
+                        default:
+                            throw new Error(`Unknown operation: ${operation}`);
+                    }
+                    
+                    updateOutput(`Math ${operation}: ${numbers.join(', ')} = ${result}`, "success");
+                    return result;
+                }
+            });
+            
+            // Update status
+            updateStatus('Connected to Hypha Core ✓', 'connected');
+            enableButtons();
+            
+            // Auto-test after connection
+            setTimeout(() => {
+                updateOutput("Auto-testing connection...", "info");
+                testExportedServices();
+            }, 1000);
+            
+        }).catch(error => {
+            console.error("Failed to connect to Hypha Core:", error);
+            updateStatus(`Connection failed: ${error.message}`, 'error');
+            updateOutput(`Connection Error: ${error.message}`, "error");
+        });
+        
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        function enableButtons() {
+            const buttons = ['calcBtn', 'notifyBtn', 'infoBtn', 'testBtn', 'customBtn'];
+            buttons.forEach(id => {
+                document.getElementById(id).disabled = false;
+            });
+        }
+        
+        function updateOutput(message, type = "info") {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const typeEmoji = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            
+            const item = document.createElement('div');
+            item.className = 'output-item';
+            item.innerHTML = `
+                <div class="timestamp">${typeEmoji} ${timestamp}</div>
+                <div>${message}</div>
+            `;
+            
+            output.appendChild(item);
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        // Functions called by the UI
+        async function performCalculation() {
+            if (!api) return;
+            
+            try {
+                const numbers = [1, 2, 3, 4, 5];
+                const sum = numbers.reduce((a, b) => a + b, 0);
+                updateOutput(`Local calculation: ${numbers.join(' + ')} = ${sum}`, "success");
+                
+                // Try to use parent's echo service
+                const result = await api.echo(`Calculation result: ${sum}`);
+                updateOutput(`Echo from parent: ${result}`, "success");
+            } catch (error) {
+                updateOutput(`Calculation error: ${error.message}`, "error");
+            }
+        }
+        
+        async function sendNotification() {
+            if (!api) return;
+            
+            try {
+                await api.log("📢 Notification sent from standalone app");
+                updateOutput("Notification sent to parent Hypha Core", "success");
+            } catch (error) {
+                updateOutput(`Notification error: ${error.message}`, "error");
+            }
+        }
+        
+        async function getSystemInfo() {
+            if (!api) return;
+            
+            try {
+                const info = {
+                    userAgent: navigator.userAgent.substring(0, 100) + "...",
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    viewport: `${window.innerWidth}x${window.innerHeight}`,
+                    connection: isConnected ? "Connected" : "Disconnected"
+                };
+                updateOutput(`System Info: ${JSON.stringify(info, null, 2)}`, "info");
+            } catch (error) {
+                updateOutput(`System info error: ${error.message}`, "error");
+            }
+        }
+        
+        async function testExportedServices() {
+            if (!api) return;
+            
+            try {
+                updateOutput("Testing exported services...", "info");
+                
+                // These would be called by the parent, but we can test the functions directly
+                const testData = [1, 2, 3, 4];
+                const processResult = await window.hyphaExports?.processData?.(testData) || 
+                    "Service not available for local testing";
+                
+                updateOutput(`Service test result: ${JSON.stringify(processResult)}`, "success");
+                
+            } catch (error) {
+                updateOutput(`Service test error: ${error.message}`, "error");
+            }
+        }
+        
+        async function sendCustomMessage() {
+            if (!api) return;
+            
+            const message = document.getElementById('messageInput').value;
+            if (!message.trim()) {
+                updateOutput("Please enter a message first", "error");
+                return;
+            }
+            
+            try {
+                // Try to echo the message through the parent
+                const result = await api.echo(message);
+                updateOutput(`Custom message echoed: ${result}`, "success");
+                
+                // Clear the input
+                document.getElementById('messageInput').value = '';
+            } catch (error) {
+                updateOutput(`Custom message error: ${error.message}`, "error");
+            }
+        }
+        
+        function clearOutput() {
+            const output = document.getElementById('output');
+            output.innerHTML = `
+                <div class="output-item">
+                    <div class="timestamp">System</div>
+                    <div>Output cleared. Ready for new operations...</div>
+                </div>
+            `;
+        }
+        
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && api) {
+                updateOutput("Page became visible - connection still active", "info");
+            }
+        });
+        
+        // Handle beforeunload
+        window.addEventListener('beforeunload', () => {
+            if (api) {
+                console.log("Standalone app is being unloaded");
+            }
+        });
+    </script>
+</body>
+</html> 

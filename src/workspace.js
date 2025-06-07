@@ -201,11 +201,11 @@ export class Workspace {
             throw new Error(`Access denied: Only root user can register services in '${ws}' workspace. Current client: ${clientId}`);
         }
         
-        if (!service.id.includes("/")) {
-            service.id = `${ws}/${service.id}`;
+        if (service.id.includes("/")) { 
+            throw new Error("Service id must not contain '/'");
         }
-        if (!service.id.includes(":")) {
-            throw new Error("Service id info must contain ':'");
+        if (service.id.includes(":")) {
+            throw new Error("Service id must not contain ':'");
         }
         service.app_id = service.app_id || "*";
         service.config.visibility = service.config.visibility || "protected";
@@ -699,6 +699,7 @@ export class Workspace {
         } else if (config.name) {
             return this.windows.find(w => w.name === config.name);
         }
+        return undefined;
     }
 
     async loadApp(config, extra_config, context) {
@@ -869,7 +870,12 @@ export class Workspace {
             },
             "register_service": async (service, context) => {
                 const workspaceId = context.ws;
-                
+                // make sure service["id"] does not contain ":" or "/"
+                if (service["id"].includes(":")) {
+                    throw new Error("Service id must not contain ':'");
+                } else if (service["id"].includes("/")) {
+                    throw new Error("Service id must not contain '/'");
+                }
                 const sv = await this._rpc.get_remote_service(context["from"] + ":built-in");
                 service["config"] = service["config"] || {};
                 service["config"]["workspace"] = workspaceId;
@@ -930,6 +936,9 @@ export class Workspace {
             "create_window": async (config, extra_config, context) => {
                 return this.createWindow(config, extra_config, context);
             },
+            "get_window": async (config, context) => {
+                return this.getWindow(config, context);
+            },
             "get_app": async (config, extra_config, context) => {
                 return this.getApp(config, extra_config, context);
             },
@@ -940,6 +949,7 @@ export class Workspace {
         // make it compatible with imjoy
         service.getPlugin = service.get_app;
         service.loadPlugin = service.load_app;
+        service.getWindow = service.get_window;
         return service;
     }
 }

@@ -391,7 +391,7 @@ const token = await api.generateToken({
 
 // Register computational services
 await api.registerService({
-    id: 'math-service:v1',
+    id: 'math-service',
     name: 'Math Service',
     config: { require_context: true, visibility: 'public' },
     
@@ -701,6 +701,368 @@ await workspace2.registerService({
     }
 });
 ```
+
+## Iframe and WebWorker Integration
+
+Hypha Core supports loading and communicating with applications in iframes and web workers. This enables you to create distributed applications where different components run in isolated environments while still communicating through the Hypha RPC system.
+
+### Two Approaches for Integration
+
+#### 1. Hypha App Format (ImJoy Plugin Style)
+
+You can create applications using the ImJoy plugin format with embedded configuration and code:
+
+```html
+<docs lang="markdown">
+# My Hypha App
+This is a sample Hypha application that runs in an iframe.
+</docs>
+
+<config lang="json">
+{
+  "name": "My Hypha App",
+  "type": "iframe",
+  "version": "0.1.0",
+  "description": "A sample application running in an iframe",
+  "tags": [],
+  "ui": "",
+  "cover": "",
+  "inputs": null,
+  "outputs": null,
+  "flags": [],
+  "icon": "extension",
+  "api_version": "0.1.7",
+  "env": "",
+  "permissions": [],
+  "requirements": [],
+  "dependencies": []
+}
+</config>
+
+<script lang="javascript">
+// This code runs in the iframe
+api.export({
+    name: "My App Service",
+    
+    async setup() {
+        await api.log("App initialized in iframe");
+    },
+    
+    async processData(data) {
+        // Process data and return results
+        return data.map(x => x * 2);
+    },
+    
+    async showMessage(message) {
+        alert(`Message from parent: ${message}`);
+        return "Message displayed";
+    }
+});
+</script>
+```
+
+Load and use the app:
+
+```javascript
+// Load app from URL (e.g., GitHub raw URL)
+const app = await api.loadApp({
+    src: "https://raw.githubusercontent.com/myuser/myrepo/main/my-app.imjoy.html"
+});
+
+// Run and interact with the app
+await app.run();
+const result = await app.processData([1, 2, 3, 4]);
+console.log(result); // [2, 4, 6, 8]
+```
+
+#### 2. Standalone Web Application
+
+You can also create standalone web applications using any framework (React, Vue, vanilla JavaScript, etc.) and connect them to Hypha Core using the WebSocket client.
+
+**Standalone App Example (`my-standalone-app.html`):**
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Standalone App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.26/dist/hypha-rpc-websocket.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>My Standalone Hypha App</h1>
+        <div class="status" id="status">Initializing...</div>
+        
+        <button onclick="performCalculation()">Perform Calculation</button>
+        <button onclick="sendNotification()">Send Notification</button>
+        <button onclick="getSystemInfo()">Get System Info</button>
+        
+        <div id="output"></div>
+    </div>
+
+    <script>
+        let api = null;
+        
+        // Connect to Hypha Core
+        hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (hyphaApi) => {
+            api = hyphaApi;
+            console.log("Connected to Hypha Core", api);
+            
+            // Export services that the parent can call
+            await api.export({
+                name: "Standalone App Services",
+                
+                async processData(data) {
+                    console.log("Processing data:", data);
+                    const result = data.map(x => x * x); // Square the numbers
+                    updateOutput(`Processed data: ${JSON.stringify(result)}`);
+                    return result;
+                },
+                
+                async updateUI(config) {
+                    console.log("Updating UI:", config);
+                    if (config.title) {
+                        document.querySelector('h1').textContent = config.title;
+                    }
+                    if (config.message) {
+                        updateOutput(`UI Update: ${config.message}`);
+                    }
+                    return "UI updated successfully";
+                },
+                
+                async getAppState() {
+                    return {
+                        title: document.querySelector('h1').textContent,
+                        timestamp: new Date().toISOString(),
+                        status: "running"
+                    };
+                }
+            });
+            
+            document.getElementById('status').textContent = 'Connected to Hypha Core ✓';
+            
+        }).catch(error => {
+            console.error("Failed to connect to Hypha Core:", error);
+            document.getElementById('status').textContent = `Connection failed: ${error.message}`;
+            document.getElementById('status').style.background = '#f8d7da';
+            document.getElementById('status').style.borderColor = '#f5c6cb';
+            document.getElementById('status').style.color = '#721c24';
+        });
+        
+        // Functions called by the UI
+        async function performCalculation() {
+            if (!api) return;
+            
+            try {
+                // Call a service from the parent Hypha Core
+                const numbers = [1, 2, 3, 4, 5];
+                const result = await api.echo(`Calculation request: ${numbers.join(', ')}`);
+                updateOutput(`Echo result: ${result}`);
+            } catch (error) {
+                updateOutput(`Error: ${error.message}`);
+            }
+        }
+        
+        async function sendNotification() {
+            if (!api) return;
+            
+            try {
+                await api.log("Notification sent from standalone app");
+                updateOutput("Notification sent to parent");
+            } catch (error) {
+                updateOutput(`Error: ${error.message}`);
+            }
+        }
+        
+        async function getSystemInfo() {
+            if (!api) return;
+            
+            try {
+                // Try to get server info if available
+                const info = {
+                    userAgent: navigator.userAgent,
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href
+                };
+                updateOutput(`System Info: ${JSON.stringify(info, null, 2)}`);
+            } catch (error) {
+                updateOutput(`Error: ${error.message}`);
+            }
+        }
+        
+        function updateOutput(message) {
+            const output = document.getElementById('output');
+            output.innerHTML += `<div style="margin: 10px 0; padding: 8px; background: #e9ecef; border-radius: 4px;">${message}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+    </script>
+</body>
+</html>
+```
+
+**Using the Standalone App:**
+
+```javascript
+// Create a window with your standalone app
+const appWindow = await api.createWindow({
+    src: "/path/to/my-standalone-app.html",  // or full URL
+    name: "My Standalone App",
+    pos: "main"  // or "side"
+});
+
+// Wait a moment for the app to initialize
+await new Promise(resolve => setTimeout(resolve, 1000));
+
+// Interact with the app's exported services
+const result = await appWindow.processData([1, 2, 3, 4, 5]);
+console.log("App result:", result); // [1, 4, 9, 16, 25]
+
+await appWindow.updateUI({
+    title: "Updated App Title",
+    message: "Hello from parent!"
+});
+
+const appState = await appWindow.getAppState();
+console.log("App state:", appState);
+```
+
+### WebWorker Support
+
+Similar to iframes, you can also create web workers that connect to Hypha Core:
+
+**Web Worker Example (`my-worker.js`):**
+
+```javascript
+// Import Hypha RPC client in the worker
+importScripts('https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.26/dist/hypha-rpc-websocket.min.js');
+
+// Connect to Hypha Core from the worker
+hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (api) => {
+    console.log("Worker connected to Hypha Core", api);
+    
+    // Export worker services
+    await api.export({
+        name: "Worker Services",
+        
+        async heavyComputation(data) {
+            // Simulate heavy computation
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                // Simulate complex calculation
+                let sum = 0;
+                for (let j = 0; j < 1000000; j++) {
+                    sum += Math.sqrt(data[i] * j);
+                }
+                result.push(sum);
+            }
+            return result;
+        },
+        
+        async processInBackground(task) {
+            console.log("Processing task in background:", task);
+            
+            // Simulate async processing
+            await new Promise(resolve => setTimeout(resolve, task.delay || 1000));
+            
+            return {
+                task: task.name,
+                result: "completed",
+                processedAt: new Date().toISOString()
+            };
+        }
+    });
+    
+}).catch(console.error);
+```
+
+**Loading and Using the Worker:**
+
+```javascript
+// Load the worker
+const worker = await api.loadApp({
+    src: "/path/to/my-worker.js",
+    type: "web-worker"
+});
+
+// Use worker services
+const computationResult = await worker.heavyComputation([1, 2, 3, 4, 5]);
+console.log("Computation result:", computationResult);
+
+const backgroundTask = await worker.processInBackground({
+    name: "data-processing",
+    delay: 2000
+});
+console.log("Background task result:", backgroundTask);
+```
+
+### Key Points for Integration
+
+#### Connection Setup
+All standalone apps and workers must include this connection code:
+
+```javascript
+hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (api) => {
+    // Your app code here
+    await api.export({
+        // Your exported services
+    });
+}).catch(console.error);
+```
+
+#### Important Notes
+
+1. **Script Loading**: Always load the Hypha RPC WebSocket client:
+   ```html
+   <script src="https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.26/dist/hypha-rpc-websocket.min.js"></script>
+   ```
+
+2. **Enable Execution**: Use `{enable_execution: true}` when setting up the local client to allow service exports.
+
+3. **Error Handling**: Always include proper error handling for connection failures.
+
+4. **Service Export**: Use `await api.export({...})` to make your app's functions available to the parent.
+
+5. **Async/Await**: Most Hypha API calls are asynchronous, so use `async/await` or Promises.
+
+6. **Viewport Meta Tag**: For mobile compatibility, include the viewport meta tag in your HTML.
+
+This integration system allows you to create complex, distributed applications where different components can run in isolation while maintaining seamless communication through the Hypha RPC system.
 
 ## Context Usage and Workspace Isolation
 

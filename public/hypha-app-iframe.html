@@ -1,22 +1,92 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hypha App</title>
+    <title>Hypha App Iframe Example</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {
             margin: 0;
-            padding: 10px;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
             overflow: hidden;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.26/dist/hypha-rpc-websocket.min.js"></script>
     <script>
-        hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then((api)=>{
-            console.log("Hypha client is ready", api)
-        }).catch(console.error);
+        hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (api) => {
+            console.log("Hypha client is ready", api);
+            
+            // Export simple services for testing
+            await api.export({
+                name: "Iframe Example Services", 
+                id: "iframe-example",
+                
+                async greet(name) {
+                    const message = `Hello ${name || 'World'} from iframe!`;
+                    document.getElementById('message').textContent = message;
+                    return message;
+                },
+                
+                async getInfo() {
+                    return {
+                        type: "iframe-app",
+                        timestamp: new Date().toISOString(),
+                        url: window.location.href,
+                        title: document.title
+                    };
+                }
+            });
+            
+            updateStatus("Connected to Hypha Core ✓", "connected");
+            document.getElementById('message').textContent = "Iframe app ready! Exported services: greet(), getInfo()";
+            
+        }).catch(error => {
+            console.error("Connection failed:", error);
+            updateStatus(`Connection failed: ${error.message}`, "error");
+            document.getElementById('message').textContent = `Error: ${error.message}`;
+        });
+        
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
     </script>
 </head>
 <body>
-    <pre>Initializing...</pre>
+    <div class="container">
+        <h2>🖼️ Hypha Iframe Example</h2>
+        <div id="status" class="status connecting">Connecting...</div>
+        <div id="message">Initializing iframe app...</div>
+        <p><small>This iframe demonstrates connection to Hypha Core and service export.</small></p>
+    </div>
 </body>
 </html>
