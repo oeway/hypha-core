@@ -33,6 +33,7 @@
           console.log("HyphaCore started successfully, API:", hyphaCore.api);
 
           const api = hyphaCore.api;
+          
           // Function to handle loading and running a plugin
           async function loadAppFromUrl(url) {
             const plugin = await api.loadApp({ src: url });
