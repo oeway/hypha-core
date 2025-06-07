@@ -192,20 +192,53 @@ export class Workspace {
         // Store the original service ID before modification for security checks
         const originalServiceId = service.id;
         
-        // Security check: only root user can register services in public workspace
-        // Exception: default workspace allows all registrations, built-in services and legitimate default services can be registered by users in any workspace
-        const isBuiltInService = originalServiceId.includes(":built-in");
-        // A genuine default service is one where the service ID is exactly "default" (e.g., client-123:default)
-        const isDefaultService = originalServiceId.split(":")[1] === "default";
-        if (ws === "public" && !clientId.endsWith("/root") && !isBuiltInService && !isDefaultService) {
+        // Handle service IDs that are already fully constructed (e.g., "default/root:built-in")
+        // vs simple service IDs (e.g., "built-in")
+        let simpleServiceId = originalServiceId;
+        let isAlreadyConstructed = false;
+        
+        if (originalServiceId.includes("/") && originalServiceId.includes(":")) {
+            // Service ID is already constructed like "workspace/client:service"
+            // Must have both slash and colon to be considered fully constructed
+            const parts = originalServiceId.split("/");
+            if (parts.length === 2 && parts[1].includes(":")) {
+                isAlreadyConstructed = true;
+                simpleServiceId = parts[1]; // Extract "client:service" part
+            }
+        }
+        
+        // Security check: only root user can register regular services in default workspace
+        // Exception: built-in services can be registered by users in any workspace
+        const isBuiltInService = simpleServiceId.includes(":built-in") || simpleServiceId === "built-in";
+        // A legitimate default service has pattern "clientId:default" where clientId matches the actual client
+        // This prevents arbitrary named services ending with ":default" from bypassing security
+        const isLegitimateDefaultService = simpleServiceId === "default" || 
+            (simpleServiceId.endsWith(":default") && 
+             clientId.endsWith("/" + simpleServiceId.split(":")[0]));
+        
+
+        
+        if (ws === "default" && !clientId.endsWith("/root") && !isBuiltInService && !isLegitimateDefaultService) {
             throw new Error(`Access denied: Only root user can register services in '${ws}' workspace. Current client: ${clientId}`);
         }
         
-        if (service.id.includes("/")) { 
-            throw new Error("Service id must not contain '/'");
-        }
-        if (service.id.includes(":")) {
-            throw new Error("Service id must not contain ':'");
+        // If service ID is not already constructed, validate and construct it
+        if (!isAlreadyConstructed) {
+            // Check if service ID has proper colon structure first - this is the primary requirement
+            // Exception: "built-in" and "default" standalone services don't need colons
+            if (!service.id.includes(":") && service.id !== "built-in" && service.id !== "default") {
+                throw new Error("Service id must contain ':'");
+            }
+            // If it has colons, ensure they're only allowed for built-in and default services
+            if (service.id.includes(":") && !service.id.endsWith(":built-in") && !service.id.endsWith(":default")) {
+                throw new Error("Service id must not contain ':' except for :built-in and :default");
+            }
+            // Service ID should not contain '/' if not already fully constructed
+            if (service.id.includes("/")) { 
+                throw new Error("Service id must not contain '/'");
+            }
+            
+            service.id = `${ws}/${service.id}`;
         }
         service.app_id = service.app_id || "*";
         service.config.visibility = service.config.visibility || "protected";

@@ -745,52 +745,9 @@
                     throw new Error('Root API not available - run basic setup first');
                 }
 
-                // Step 1: Create a client connection to the default workspace
-                log('Step 1: Creating client connection to default workspace...');
-                const defaultToken = await rootApi.generateToken({
-                    user_id: 'default-test-user',
-                    workspace: 'default',
-                    roles: ['user']
-                });
-
-                const defaultClient = await hyphaCore.connect({
-                    token: defaultToken,
-                    client_id: 'default-test-client',
-                    workspace: 'default'
-                });
-
-                log('✓ Default workspace client connected');
-
-                // Step 2: Register a service that the standalone app can use
-                log('Step 2: Registering demo service in default workspace...');
-                await defaultClient.registerService({
-                    id: 'demo-service',
-                    name: 'Demo Service for Standalone App',
-                    description: 'A demo service to test standalone app integration',
-                    config: {
-                        require_context: true,
-                        visibility: 'public'
-                    },
-                    overwrite: true,
-                    echo: function(message, context) {
-                        log(`Demo service: Echo "${message}" (called from ${context?.from || 'unknown'})`);
-                        return `Echo: ${message}`;
-                    },
-                    getCurrentTime: function(context) {
-                        const time = new Date().toISOString();
-                        log(`Demo service: getCurrentTime() called (workspace: ${context?.ws})`);
-                        return time;
-                    },
-                    ping: function(context) {
-                        log(`Demo service: ping() called from ${context?.from || 'unknown'}`);
-                        return 'pong';
-                    }
-                });
-
-                log('✓ Demo service registered successfully');
-
-                // Step 3: Create a test window with standalone app
-                log('Step 3: Creating standalone app window...');
+               
+                // Step 1: Create a test window with standalone app
+                log('Step 1: Creating standalone app window...');
                 const baseUrl = window.location.origin;
                 const windowConfig = {
                     src: `${baseUrl}/standalone-app-example.html`,
@@ -800,39 +757,92 @@
                 };
 
                 // Create window using the rootApi
-                await rootApi.createWindow(windowConfig);
+                const app = await rootApi.createWindow(windowConfig);
                 log('✓ Standalone app window created');
 
-                // Step 4: Wait for the standalone app to potentially connect and test services
-                log('Step 4: Waiting for standalone app integration...');
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Give it time to load
+                // Step 2: Test updateUI API
+                log('Step 2: Testing updateUI API...');
+                await app.updateUI({
+                    title: "Standalone App Test",
+                    message: "This is a test message from integration test"
+                });
+                log('✓ updateUI API tested successfully');
 
-                // Step 5: Verify the demo service is accessible from default workspace
-                log('Step 5: Verifying demo service accessibility...');
-                const demoService = await defaultClient.getService('demo-service');
+                // Step 3: Test processData API with different data types
+                log('Step 3: Testing processData API...');
                 
-                if (!demoService) {
-                    throw new Error('Demo service not found');
+                // Test with array
+                const arrayResult = await app.processData([1, 2, 3, 4]);
+                log(`✓ processData with array: ${JSON.stringify(arrayResult)}`);
+                
+                // Test with string
+                const stringResult = await app.processData('hello world');
+                log(`✓ processData with string: ${stringResult}`);
+                
+                // Test with object
+                const objectResult = await app.processData({ test: true, value: 42 });
+                log(`✓ processData with object: ${JSON.stringify(objectResult)}`);
+
+                // Step 4: Test performMath API
+                log('Step 4: Testing performMath API...');
+                
+                const addMathResult = await app.performMath('add', 10, 20, 30);
+                log(`✓ performMath add(10, 20, 30) = ${addMathResult}`);
+                if (addMathResult !== 60) {
+                    throw new Error(`Expected 60, got ${addMathResult}`);
+                }
+                
+                const multiplyResult = await app.performMath('multiply', 3, 4, 5);
+                log(`✓ performMath multiply(3, 4, 5) = ${multiplyResult}`);
+                if (multiplyResult !== 60) {
+                    throw new Error(`Expected 60, got ${multiplyResult}`);
+                }
+                
+                const averageResult = await app.performMath('average', 10, 20, 30);
+                log(`✓ performMath average(10, 20, 30) = ${averageResult}`);
+                if (averageResult !== 20) {
+                    throw new Error(`Expected 20, got ${averageResult}`);
                 }
 
-                const echoResult = await demoService.echo('Standalone App Test');
-                log(`✓ Demo service echo: "${echoResult}"`);
+                // Step 5: Test getAppState API
+                log('Step 5: Testing getAppState API...');
+                const appState = await app.getAppState();
+                log(`✓ getAppState result: ${JSON.stringify(appState, null, 2)}`);
                 
-                const timeResult = await demoService.getCurrentTime();
-                log(`✓ Demo service time: ${timeResult}`);
-                
-                const pingResult = await demoService.ping();
-                log(`✓ Demo service ping: ${pingResult}`);
-
-                // Step 6: List services to confirm everything is working
-                log('Step 6: Listing all services in default workspace...');
-                const services = await defaultClient.listServices();
-                log(`✓ Total services available in default workspace: ${services.length}`);
-                
-                for (const service of services) {
-                    log(`  - ${service.name} (${service.id})`);
+                // Verify app state structure
+                if (!appState.title) {
+                    throw new Error('App state missing title');
                 }
+                if (!appState.timestamp) {
+                    throw new Error('App state missing timestamp');
+                }
+                if (appState.connected !== true) {
+                    throw new Error('App state shows not connected');
+                }
+                if (!appState.url) {
+                    throw new Error('App state missing URL');
+                }
+                
+                log('✓ App state structure verified');
 
+                // Step 6: Test complex interaction - update UI and check state
+                log('Step 6: Testing complex interaction...');
+                await app.updateUI({
+                    title: "Integration Test Complete",
+                    message: "All API tests passed successfully!",
+                    style: {
+                        backgroundColor: '#d4edda'
+                    }
+                });
+                
+                const finalState = await app.getAppState();
+                if (!finalState.title.includes('Integration Test Complete')) {
+                    throw new Error('UI update not reflected in app state');
+                }
+                
+                log('✓ Complex interaction test passed');
+
+                log('✓ All standalone app APIs tested successfully');
                 updateStatus('standalone', 'success');
                 addResult('Standalone App Integration', true);
                 log('🎉 Standalone app integration test completed successfully!', 'success');
