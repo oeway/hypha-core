@@ -557,7 +557,7 @@ export class Workspace {
             keys.push(...this._redis.keys(wsPattern));
         }
     
-        console.debug("Found service keys:", keys);
+        // console.debug("Found service keys:", keys);
         const withinWorkspaceKeys = [];
         const outsideWorkspaceKeys = [];
     
