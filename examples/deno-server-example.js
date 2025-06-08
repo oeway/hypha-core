@@ -12,7 +12,6 @@
 
 import { HyphaCore } from '../src/hypha-core.js';
 import { DenoWebSocketServer, DenoWebSocketClient } from '../src/deno-websocket-server.js';
-import { Workspace } from '../src/workspace.js';
 
 async function startHyphaServer() {
     console.log('🚀 Starting Hypha Core server with real WebSocket support and HTTP API in Deno...');

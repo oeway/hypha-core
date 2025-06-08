@@ -170,6 +170,8 @@ class HyphaServiceProxy {
         // Bind context to all default service functions for consistency
         for (const [key, value] of Object.entries(defaultService)) {
             if (typeof value === 'function') {
+                // we should ensure context is always the last argument
+                // we should make sure the function takes at least one argument
                 // Bind context to all function properties
                 boundDefaultService[key] = (...args) => value(...args, context);
             } else {
@@ -179,6 +181,23 @@ class HyphaServiceProxy {
         }
         
         return boundDefaultService;
+    }
+
+    /**
+     * Extract cookies from request headers
+     */
+    extractCookies(request) {
+        const cookieHeader = request.headers.get('cookie');
+        if (!cookieHeader) return {};
+        
+        const cookies = {};
+        cookieHeader.split(';').forEach(cookie => {
+            const [name, value] = cookie.trim().split('=');
+            if (name && value) {
+                cookies[name] = value;
+            }
+        });
+        return cookies;
     }
 
     /**
@@ -308,9 +327,9 @@ class HyphaServiceProxy {
         try {
             const authToken = this.extractAuthToken(request);
             
-                    // Get workspace interface with proper context
-        const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
-        const services = await workspaceInterface.listServices({});
+            // Get workspace interface with proper context
+            const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
+            const services = await workspaceInterface.listServices({});
             
             // Serialize and remove workspace prefix from service IDs
             const serializedServices = this.serialize(services);
@@ -483,6 +502,268 @@ class HyphaServiceProxy {
     }
 
     /**
+     * Handle ASGI app routing - /{workspace}/apps/{service_id}/{path}
+     */
+    async handleAsgiApp(workspace, serviceId, path, request) {
+        try {
+            const queryParams = this.extractQueryParams(request.url);
+            const authToken = this.extractAuthToken(request);
+            const cookies = this.extractCookies(request);
+            
+            // Get workspace interface with proper context  
+            const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
+            
+            // Get service info to check if it's an ASGI service
+            const mode = queryParams._mode || null;
+            const service = await workspaceInterface.getService(serviceId, { mode });
+            
+            if (!service) {
+                return this.createErrorResponse(404, `Service ${serviceId} not found`);
+            }
+            
+            // Get service info to check the type
+            const serviceInfo = {
+                id: serviceId,
+                name: service.name || serviceId,
+                description: service.description || `Service ${serviceId}`,
+                config: service.config || {},
+                type: service.type || 'functions'
+            };
+            
+            if (serviceInfo.type === 'asgi' || serviceInfo.type === 'ASGI') {
+                return await this.handleAsgiService(service, path, request, workspace, serviceId);
+            } else if (serviceInfo.type === 'functions') {
+                return await this.handleFunctionService(service, path, request, workspace, serviceId);
+            } else {
+                return this.createErrorResponse(404, 'Not Found');
+            }
+            
+        } catch (error) {
+            console.error('Error in ASGI app handling:', error);
+            return this.createErrorResponse(500, 'Internal Server Error', error.message);
+        }
+    }
+
+    /**
+     * Handle ASGI service by implementing the ASGI protocol with streaming support
+     */
+    async handleAsgiService(service, path, request, workspace, serviceId) {
+        try {
+            // Ensure path starts with /
+            if (!path.startsWith('/')) {
+                path = '/' + path;
+            }
+            
+            // Create ASGI scope similar to Python implementation
+            const url = new URL(request.url);
+            const scope = {
+                type: 'http',
+                method: request.method,
+                path: path,
+                raw_path: new TextEncoder().encode(path),
+                query_string: new TextEncoder().encode(url.search.slice(1) || ''),
+                headers: this.convertHeadersToAsgiFormat(request.headers),
+                server: ['localhost', 80], // Could be extracted from request
+                client: ['127.0.0.1', 0], // Could be extracted from request
+            };
+            
+            // Create receive callable for ASGI
+            let bodyConsumed = false;
+            const receive = async () => {
+                if (!bodyConsumed) {
+                    bodyConsumed = true;
+                    const body = request.body ? new Uint8Array(await request.arrayBuffer()) : new Uint8Array();
+                    return {
+                        type: 'http.request',
+                        body: body,
+                        more_body: false
+                    };
+                } else {
+                    // If body already consumed, return empty body
+                    return {
+                        type: 'http.request',
+                        body: new Uint8Array(),
+                        more_body: false
+                    };
+                }
+            };
+            
+            // Create streaming response handling
+            let responseStarted = false;
+            let responseStatus = 200;
+            let responseHeaders = [];
+            let streamController = null;
+            let isStreamingResponse = false;
+            
+            // Create ReadableStream for streaming response
+            const stream = new ReadableStream({
+                start(controller) {
+                    streamController = controller;
+                },
+                cancel() {
+                    // Handle stream cancellation
+                    if (streamController) {
+                        streamController = null;
+                    }
+                }
+            });
+            
+            const send = async (message) => {
+                if (message.type === 'http.response.start') {
+                    responseStarted = true;
+                    responseStatus = message.status;
+                    responseHeaders = message.headers || [];
+                } else if (message.type === 'http.response.body') {
+                    const body = message.body || new Uint8Array();
+                    const moreBody = message.more_body !== false; // Default to true if not specified
+                    
+                    if (streamController) {
+                        if (body.length > 0) {
+                            // Enqueue the chunk for streaming
+                            streamController.enqueue(body);
+                            isStreamingResponse = true;
+                        }
+                        
+                        // If this is the last chunk, close the stream
+                        if (!moreBody) {
+                            streamController.close();
+                        }
+                    }
+                }
+            };
+            
+            // Start the ASGI application in the background
+            const asgiPromise = (async () => {
+                try {
+                    if (service.serve && typeof service.serve === 'function') {
+                        await service.serve({
+                            scope: scope,
+                            receive: receive,
+                            send: send
+                        });
+                    } else {
+                        throw new Error('ASGI service missing serve function');
+                    }
+                } catch (error) {
+                    console.error('Error in ASGI service execution:', error);
+                    if (streamController) {
+                        // Send error response if stream hasn't started
+                        if (!isStreamingResponse) {
+                            streamController.enqueue(new TextEncoder().encode(JSON.stringify({
+                                detail: 'Internal Server Error',
+                                error: error.message
+                            })));
+                        }
+                        streamController.close();
+                    }
+                }
+            })();
+            
+            // Wait a short time to see if we get response headers
+            // This ensures we can set the status and headers properly
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+            // Convert ASGI headers to Response headers
+            const responseHeadersMap = new Headers();
+            
+            // Add CORS headers
+            responseHeadersMap.set('Access-Control-Allow-Origin', '*');
+            responseHeadersMap.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+            responseHeadersMap.set('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+            responseHeadersMap.set('Access-Control-Expose-Headers', 'Content-Disposition');
+            
+            // Add response headers from ASGI
+            for (const [key, value] of responseHeaders) {
+                const keyStr = typeof key === 'string' ? key : new TextDecoder().decode(key);
+                const valueStr = typeof value === 'string' ? value : new TextDecoder().decode(value);
+                responseHeadersMap.set(keyStr, valueStr);
+            }
+            
+            // Return streaming response
+            return new Response(stream, {
+                status: responseStatus,
+                headers: responseHeadersMap
+            });
+            
+        } catch (error) {
+            console.error('Error in ASGI service:', error);
+            return this.createErrorResponse(500, 'Internal Server Error', error.message);
+        }
+    }
+
+    /**
+     * Handle function service for app routing
+     */
+    async handleFunctionService(service, path, request, workspace, serviceId) {
+        try {
+            // Extract function name from path
+            let funcName = path.split('/').filter(p => p).pop() || 'index';
+            funcName = funcName.replace(/\/$/, ''); // Remove trailing slash
+            
+            if (funcName in service && typeof service[funcName] === 'function') {
+                // Convert request to scope-like object for function services
+                const url = new URL(request.url);
+                const scope = {
+                    type: 'http',
+                    method: request.method,
+                    path: path,
+                    query_string: url.search.slice(1) || '',
+                    headers: Object.fromEntries(request.headers.entries()),
+                    body: request.body ? await request.arrayBuffer() : null,
+                    client: ['127.0.0.1', 0],
+                };
+                
+                const func = service[funcName];
+                const result = await func(scope);
+                
+                // Handle the result similar to Python implementation
+                const headers = new Headers(result.headers || {});
+                
+                // Add CORS headers
+                const origin = scope.headers.origin;
+                headers.set('Access-Control-Allow-Credentials', 'true');
+                headers.set('Access-Control-Allow-Origin', origin || '*');
+                headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+                headers.set('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+                headers.set('Access-Control-Expose-Headers', 'Content-Disposition');
+                
+                let body = result.body || '';
+                const status = result.status || 200;
+                
+                if (typeof body === 'string') {
+                    body = new TextEncoder().encode(body);
+                }
+                
+                return new Response(body, {
+                    status: status,
+                    headers: headers
+                });
+                
+            } else {
+                return this.createErrorResponse(404, `Function not found: ${funcName}`);
+            }
+            
+        } catch (error) {
+            console.error('Error in function service:', error);
+            return this.createErrorResponse(500, 'Internal Server Error', error.message);
+        }
+    }
+
+    /**
+     * Convert Headers object to ASGI format (array of [key, value] byte arrays)
+     */
+    convertHeadersToAsgiFormat(headers) {
+        const asgiHeaders = [];
+        for (const [key, value] of headers.entries()) {
+            asgiHeaders.push([
+                new TextEncoder().encode(key.toLowerCase()),
+                new TextEncoder().encode(value)
+            ]);
+        }
+        return asgiHeaders;
+    }
+
+    /**
      * Get nested value from object using dot notation
      */
     getNestedValue(obj, path) {
@@ -510,6 +791,15 @@ class HyphaServiceProxy {
         // Handle CORS preflight
         if (request.method === 'OPTIONS') {
             return this.handleOptions(request);
+        }
+        
+        // Route pattern for apps: /{workspace}/apps/{service_id}/{path}
+        if (pathParts.length >= 3 && pathParts[1] === 'apps') {
+            const workspace = pathParts[0];
+            const serviceId = pathParts[2];
+            const path = '/' + pathParts.slice(3).join('/');
+            
+            return await this.handleAsgiApp(workspace, serviceId, path, request);
         }
         
         // Route pattern: /{workspace}/services/{service_id}/{function_key}
@@ -600,9 +890,10 @@ class DenoWebSocketServer extends MessageEmitter {
         
         // Handle service proxy requests if hypha-core is available
         if (this._serviceProxy) {
-            // Check if this is a service-related request
+            // Check if this is a service-related request or app request
             const pathParts = url.pathname.split('/').filter(part => part);
-            if (pathParts.length >= 2 && pathParts[1] === 'services') {
+            if ((pathParts.length >= 2 && pathParts[1] === 'services') || 
+                (pathParts.length >= 3 && pathParts[1] === 'apps')) {
                 return await this._serviceProxy.routeRequest(request);
             }
         }

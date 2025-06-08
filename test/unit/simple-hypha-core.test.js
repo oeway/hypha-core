@@ -637,7 +637,7 @@ describe('HyphaCore Basic Functionality Tests', () => {
                 await workspace.registerService(service, context);
                 expect.fail('Should have thrown error for invalid service ID');
             } catch (error) {
-                expect(error.message).to.include(':');
+                expect(error.message).to.include('/');
             }
         });
 

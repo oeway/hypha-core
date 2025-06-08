@@ -1461,6 +1461,10 @@ test.describe('Core API Integration', () => {
             }
         });
         
+        if (!serviceTest.success) {
+            console.log('Service test failed with error:', serviceTest.error);
+        }
+        
         expect(serviceTest.success).toBe(true);
         expect(serviceTest.serviceRegistered).toBe(true);
         expect(serviceTest.serviceRetrieved).toBe(true);

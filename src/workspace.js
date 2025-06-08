@@ -310,6 +310,9 @@ export class Workspace {
                 console.info(`Adding service ${service.id}, key: ${key}`);
             }
         }
+        
+        // Return the service object with the processed ID and configuration
+        return service;
     }
 
     /**

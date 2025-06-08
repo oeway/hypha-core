@@ -779,6 +779,13 @@ class HyphaCore extends MessageEmitter {
         };
 
         const api = {
+            // API properties that tests expect
+            id: context.from.split('/')[1], // Extract client ID from "workspace/clientId"
+            config: {
+                workspace: context.ws,
+                server_url: this.url
+            },
+            
             // Workspace management functions
             registerService: async (service) => {
                 return await this.workspaceManager.registerService(service, context);
@@ -798,8 +805,143 @@ class HyphaCore extends MessageEmitter {
             
             close: () => {
                 this.close();
+            },
+
+            // Event methods
+            emit: async (type, data) => {
+                await this.workspaceManager.eventBus.emit(type, data);
+            },
+            
+            on: (event, handler) => {
+                this.workspaceManager.eventBus.on(event, handler);
+            },
+            
+            off: (event, handler) => {
+                this.workspaceManager.eventBus.off(event, handler);
+            },
+
+            // Utility methods
+            echo: (msg) => {
+                return msg;
+            },
+            
+            alert: (msg) => {
+                alert(msg);
+            },
+            
+            confirm: (msg) => {
+                return confirm(msg);
+            },
+            
+            prompt: (msg, default_value) => {
+                return prompt(msg, default_value);
+            },
+            
+            showProgress: (progress) => {
+                console.log("showProgress", progress);
+            },
+            
+            showMessage: (msg) => {
+                console.log(msg);
+            },
+            
+            log: (msg) => {
+                console.log(msg);
+            },
+            
+            info: (msg) => {
+                console.info(msg);
+            },
+            
+            error: (msg) => {
+                console.error(msg);
+            },
+            
+            warning: (msg) => {
+                console.warn(msg);
+            },
+            
+            critical: (msg) => {
+                console.error(msg);
+            },
+
+            // Token generation
+            generateToken: async (tokenConfig) => {
+                if (!tokenConfig) {
+                    tokenConfig = {};
+                }
+                
+                const currentWorkspace = context.ws;
+                const currentClientId = context.from?.split('/')[1];
+                
+                // Determine target workspace with access control
+                let targetWorkspace = tokenConfig.workspace || currentWorkspace;
+                
+                // Only root client in default workspace can generate tokens for other workspaces
+                if (targetWorkspace !== currentWorkspace) {
+                    if (currentWorkspace !== "default" || currentClientId !== "root") {
+                        throw new Error(`Access denied: Cannot generate token for workspace '${targetWorkspace}' from workspace '${currentWorkspace}' with client '${currentClientId}'. Only root client in default workspace can generate cross-workspace tokens.`);
+                    }
+                }
+                
+                // Build JWT payload
+                const payload = {
+                    sub: tokenConfig.user_id || context.user?.id || "anonymous",
+                    workspace: targetWorkspace,
+                    client_id: tokenConfig.client_id || context.from?.split('/')[1] || "anonymous-" + Date.now().toString(),
+                    email: tokenConfig.email || context.user?.email || "",
+                    roles: tokenConfig.roles || context.user?.roles || [],
+                    scope: Array.isArray(tokenConfig.scopes) ? tokenConfig.scopes.join(' ') : (tokenConfig.scope || ""),
+                    iat: Math.floor(Date.now() / 1000),
+                    exp: tokenConfig.expires_in ? Math.floor(Date.now() / 1000) + tokenConfig.expires_in : Math.floor(Date.now() / 1000) + (24 * 60 * 60), // Default 24 hours
+                    iss: "hypha-core",
+                    aud: "hypha-api"
+                };
+                
+                // Get JWT secret from server
+                const jwtSecret = this.jwtSecret;
+                if (!jwtSecret) {
+                    throw new Error("JWT secret not configured on server");
+                }
+                
+                // Generate and return JWT token using the function imported at the top of the file
+                return await generateJWT(payload, jwtSecret);
+            },
+
+            // App and window management methods
+            loadApp: async (config, extra_config) => {
+                return await this.workspaceManager.loadApp(config, extra_config, context);
+            },
+            
+            createWindow: async (config, extra_config) => {
+                return await this.workspaceManager.createWindow(config, extra_config, context);
+            },
+            
+            getWindow: async (config) => {
+                return await this.workspaceManager.getWindow(config, context);
+            },
+            
+            getApp: async (config, extra_config) => {
+                return await this.workspaceManager.getApp(config, extra_config, context);
             }
         };
+
+        // Add aliases for compatibility
+        api.getPlugin = api.getApp;
+        api.loadPlugin = api.loadApp;
+
+        // Register the default service to ensure there are always services available
+        this.workspaceManager.registerService({
+            id: "default",
+            name: "Default workspace management service",
+            description: "Services for managing workspace.",
+            config: {
+                visibility: "public",
+            },
+            ...this.workspaceManager.getDefaultService()
+        }, context).catch(err => {
+            console.warn("Could not register default service:", err.message);
+        });
 
         // Add camelCase versions
         return this._createCamelCaseWrapper(api);
