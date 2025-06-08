@@ -360,13 +360,21 @@ class HyphaServiceProxy {
             
             // Handle special case for 'ws' service
             if (serviceId === 'ws') {
+                const service = workspaceInterface;
                 const serviceInfo = {
                     id: 'ws',
                     name: 'Workspace Service',
                     description: 'Default workspace management service',
                     config: { require_context: true, visibility: 'public' },
-                    type: 'functions'
+                    type: 'functions'  // Keep as 'functions' for workspace service since it's explicitly a function service
                 };
+                
+                // Add member functions for workspace service
+                const members = this.extractServiceMembers(service);
+                if (members.length > 0) {
+                    serviceInfo.members = members;
+                }
+                
                 return this.createSuccessResponse(serviceInfo);
             }
             
@@ -384,8 +392,14 @@ class HyphaServiceProxy {
                 name: service.name || serviceId,
                 description: service.description || `Service ${serviceId}`,
                 config: service.config || {},
-                type: service.type || 'functions'
+                type: service.type || 'generic'
             };
+            
+            // Add member functions/methods information
+            const members = this.extractServiceMembers(service);
+            if (members.length > 0) {
+                serviceInfo.members = members;
+            }
             
             return this.createSuccessResponse(this.serialize(serviceInfo));
         } catch (error) {
@@ -527,7 +541,7 @@ class HyphaServiceProxy {
                 name: service.name || serviceId,
                 description: service.description || `Service ${serviceId}`,
                 config: service.config || {},
-                type: service.type || 'functions'
+                type: service.type || 'generic'
             };
             
             if (serviceInfo.type === 'asgi' || serviceInfo.type === 'ASGI') {
@@ -761,6 +775,72 @@ class HyphaServiceProxy {
             ]);
         }
         return asgiHeaders;
+    }
+
+    /**
+     * Extract service members (functions and properties) for service info
+     */
+    extractServiceMembers(service) {
+        const members = [];
+        const skipKeys = ['id', 'name', 'description', 'config', 'type', '_rintf'];
+        
+        for (const [key, value] of Object.entries(service)) {
+            if (skipKeys.includes(key)) {
+                continue;
+            }
+            
+            if (typeof value === 'function') {
+                members.push({
+                    name: key,
+                    type: 'function'
+                });
+            } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                // Check for nested functions (like math.add, math.multiply)
+                const nestedFunctions = this.extractNestedFunctions(value, key);
+                members.push(...nestedFunctions);
+                
+                // Also add the object itself if it has properties
+                if (Object.keys(value).length > 0 && !value._rintf) {
+                    members.push({
+                        name: key,
+                        type: 'object'
+                    });
+                }
+            } else if (value !== undefined && value !== null) {
+                members.push({
+                    name: key,
+                    type: typeof value
+                });
+            }
+        }
+        
+        return members;
+    }
+    
+    /**
+     * Extract nested functions from an object (for things like math.add)
+     */
+    extractNestedFunctions(obj, prefix = '') {
+        const members = [];
+        
+        for (const [key, value] of Object.entries(obj)) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            
+            if (typeof value === 'function') {
+                members.push({
+                    name: fullKey,
+                    type: 'function'
+                });
+            } else if (typeof value === 'object' && value !== null && !Array.isArray(value) && !value._rintf) {
+                // Recursively check nested objects (but don't go too deep)
+                if (prefix.split('.').length < 2) {
+                    const nestedMembers = this.extractNestedFunctions(value, fullKey);
+                    members.push(...nestedMembers);
+                }
+            }
+        }
+        
+        return members;
     }
 
     /**
