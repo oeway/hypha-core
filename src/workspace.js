@@ -720,13 +720,13 @@ export class Workspace {
         if (!pattern.startsWith("services:")) {
             throw new Error("Query pattern does not start with 'services:'.");
         }
-        console.log("Listing services using pattern:", pattern);
+        // console.log("Listing services using pattern:", pattern);
         const keys = this._redis.keys(pattern);
     
         if (workspace === "*") {
             const wsPattern = `services:${originalVisibility}:${cws}/${clientId}:${serviceId}@${appId}`;
             keys.push(...this._redis.keys(wsPattern));
-            console.log("Listing more services using pattern:", wsPattern);
+            // console.log("Listing more services using pattern:", wsPattern);
         }
     
         const services = [];

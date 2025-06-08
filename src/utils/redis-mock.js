@@ -2940,7 +2940,7 @@
     };
     function emit(rm, event) {
         var g = gather(emit).apply(null, arguments);
-        if (exists(rm.listeners[event])) {
+        if (exists(rm.listeners) && exists(rm.listeners[event])) {
             rm.listeners[event]
                 .forEach(function (cb) {
                     setImmediate(function () {

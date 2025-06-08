@@ -10,6 +10,213 @@
 import { MessageEmitter } from './utils/index.js';
 
 /**
+ * Redis Cluster Manager for horizontal scalability
+ */
+class RedisClusterManager {
+    constructor(redis, serverId, options = {}) {
+        this.redis = redis;
+        this.serverId = serverId;
+        this.options = options;
+        this.heartbeatInterval = options.heartbeatInterval || 30000; // 30 seconds
+        this.cleanupInterval = options.cleanupInterval || 60000; // 60 seconds
+        this.serverTTL = options.serverTTL || 90; // 90 seconds
+        this.isActive = false;
+        this._heartbeatTimer = null;
+        this._cleanupTimer = null;
+        this.messageHandlers = new Map();
+    }
+
+    async start() {
+        if (this.isActive) return;
+        
+        this.isActive = true;
+        console.log(`Starting Redis cluster manager for server: ${this.serverId}`);
+        
+        // Start heartbeat
+        await this._heartbeat();
+        this._heartbeatTimer = setInterval(() => this._heartbeat(), this.heartbeatInterval);
+        
+        // Start cleanup
+        this._cleanupTimer = setInterval(() => this._cleanup(), this.cleanupInterval);
+        
+        // Subscribe to cluster messages
+        await this._subscribeToClusterMessages();
+    }
+
+    async stop() {
+        if (!this.isActive) return;
+        
+        this.isActive = false;
+        console.log(`Stopping Redis cluster manager for server: ${this.serverId}`);
+        
+        // Clear timers
+        if (this._heartbeatTimer) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = null;
+        }
+        if (this._cleanupTimer) {
+            clearInterval(this._cleanupTimer);
+            this._cleanupTimer = null;
+        }
+        
+        // Remove server from active list
+        await this.redis.del(`cluster:servers:${this.serverId}`);
+        await this.redis.srem('cluster:active_servers', this.serverId);
+        
+        // Unsubscribe from messages
+        await this._unsubscribeFromClusterMessages();
+    }
+
+    async registerClient(clientId, workspace) {
+        const key = `cluster:clients:${workspace}:${clientId}`;
+        await this.redis.hset(key, 'server_id', this.serverId, 'connected_at', Date.now(), 'workspace', workspace);
+        await this.redis.expire(key, this.serverTTL);
+        await this.redis.sadd(`cluster:servers:${this.serverId}:clients`, `${workspace}:${clientId}`);
+    }
+
+    async unregisterClient(clientId, workspace) {
+        const key = `cluster:clients:${workspace}:${clientId}`;
+        await this.redis.del(key);
+        await this.redis.srem(`cluster:servers:${this.serverId}:clients`, `${workspace}:${clientId}`);
+    }
+
+    async findClientServer(clientId, workspace) {
+        const key = `cluster:clients:${workspace}:${clientId}`;
+        const clientInfo = await this.redis.hgetall(key);
+        return clientInfo?.server_id || null;
+    }
+
+    async getActiveServers() {
+        return await this.redis.smembers('cluster:active_servers') || [];
+    }
+
+    async broadcastMessage(channel, message, excludeServer = null) {
+        const servers = await this.getActiveServers();
+        const targetServers = excludeServer ? 
+            servers.filter(id => id !== excludeServer) : servers;
+        
+        const promises = targetServers.map(serverId => {
+            return this.redis.publish(`cluster:${serverId}`, JSON.stringify({
+                type: 'message',
+                channel: channel,
+                message: message,
+                from_server: this.serverId
+            }));
+        });
+        
+        await Promise.all(promises);
+    }
+
+    async forwardMessage(targetClientId, workspace, message) {
+        const targetServer = await this.findClientServer(targetClientId, workspace);
+        if (!targetServer) {
+            throw new Error(`Client ${workspace}/${targetClientId} not found in cluster`);
+        }
+        
+        if (targetServer === this.serverId) {
+            // Local delivery - handled by caller
+            return false;
+        }
+        
+        // Remote delivery via Redis
+        await this.redis.publish(`cluster:${targetServer}`, JSON.stringify({
+            type: 'forward_message',
+            target_client: `${workspace}:${targetClientId}`,
+            message: message,
+            from_server: this.serverId
+        }));
+        
+        return true;
+    }
+
+    async onMessage(handler) {
+        const wrappedHandler = (channel, message) => {
+            try {
+                // Skip parsing if message is a simple Redis response like "OK"
+                if (typeof message === 'string' && (message === 'OK' || message.match(/^\d+$/))) {
+                    // These are Redis command responses, not cluster messages
+                    return;
+                }
+                const parsedMessage = JSON.parse(message);
+                handler(parsedMessage);
+            } catch (error) {
+                console.error('Error parsing cluster message:', error);
+            }
+        };
+        
+        this.messageHandlers.set(handler, wrappedHandler);
+        
+        // Subscribe to this server's channel
+        await this.redis.subscribe(`cluster:${this.serverId}`, wrappedHandler);
+    }
+
+    async offMessage(handler) {
+        const wrappedHandler = this.messageHandlers.get(handler);
+        if (wrappedHandler) {
+            await this.redis.unsubscribe(`cluster:${this.serverId}`, wrappedHandler);
+            this.messageHandlers.delete(handler);
+        }
+    }
+
+    async _heartbeat() {
+        const load = await this._getServerLoad();
+        
+        await this.redis.hset(`cluster:servers:${this.serverId}`, 
+            'last_seen', Date.now(),
+            'host', this.options.host || 'localhost',
+            'port', this.options.port || 8080,
+            'load', JSON.stringify(load)
+        );
+        await this.redis.expire(`cluster:servers:${this.serverId}`, this.serverTTL);
+        await this.redis.sadd('cluster:active_servers', this.serverId);
+        await this.redis.expire('cluster:active_servers', this.serverTTL);
+    }
+
+    async _cleanup() {
+        const now = Date.now();
+        const cutoff = now - (this.serverTTL * 1000);
+        
+        // Clean up dead servers
+        const servers = await this.redis.smembers('cluster:active_servers') || [];
+        for (const serverId of servers) {
+            const serverInfo = await this.redis.hgetall(`cluster:servers:${serverId}`);
+            if (serverInfo?.last_seen && parseInt(serverInfo.last_seen) < cutoff) {
+                console.log(`Cleaning up dead server: ${serverId}`);
+                await this.redis.srem('cluster:active_servers', serverId);
+                await this.redis.del(`cluster:servers:${serverId}`);
+                
+                // Clean up clients from dead server
+                const clients = await this.redis.smembers(`cluster:servers:${serverId}:clients`) || [];
+                for (const clientKey of clients) {
+                    await this.redis.del(`cluster:clients:${clientKey}`);
+                }
+                await this.redis.del(`cluster:servers:${serverId}:clients`);
+            }
+        }
+    }
+
+    async _getServerLoad() {
+        // Simple load metric - can be enhanced
+        const clientCount = await this.redis.scard(`cluster:servers:${this.serverId}:clients`) || 0;
+        return { client_count: clientCount };
+    }
+
+    async _subscribeToClusterMessages() {
+        // Already handled in onMessage method
+        console.log(`Cluster message subscription setup for: cluster:${this.serverId}`);
+    }
+
+    async _unsubscribeFromClusterMessages() {
+        // Clean up all message handlers
+        for (const [handler, wrappedHandler] of this.messageHandlers) {
+            this.redis.off('message', wrappedHandler);
+        }
+        this.messageHandlers.clear();
+        console.log(`Cluster message subscription cleaned up for: cluster:${this.serverId}`);
+    }
+}
+
+/**
  * WebSocket wrapper that mimics mock-socket WebSocket API
  */
 class DenoWebSocketWrapper extends MessageEmitter {
@@ -924,8 +1131,7 @@ class DenoWebSocketServer extends MessageEmitter {
         
         // Parse the WebSocket URL to get host and port
         const wsUrl = new URL(url);
-        // Fix hostname resolution - use 'localhost' instead of hostname for local binding
-        this.host = wsUrl.hostname === 'local-hypha-server' ? 'localhost' : wsUrl.hostname;
+        this.host = wsUrl.hostname;
         this.port = parseInt(wsUrl.port) || (wsUrl.protocol === 'wss:' ? 443 : 80);
         this.options = options;
         this.clients = new Set();
@@ -934,9 +1140,30 @@ class DenoWebSocketServer extends MessageEmitter {
         this._hyphaCore = options.hyphaCore || null;
         this._serviceProxy = null;
         
+        // Clustering support
+        this._clustered = options.clustered || false;
+        this._clusterManager = null;
+        this._serverId = options.serverId || `deno-ws-${this.host}-${this.port}-${Math.random().toString(36).substr(2, 9)}`;
+        
         // Initialize service proxy if hypha-core is provided
         if (this._hyphaCore) {
             this._serviceProxy = new HyphaServiceProxy(this._hyphaCore);
+        }
+        
+        // Initialize clustering if enabled
+        const redisClient = options.redis || this._hyphaCore?.redis;
+        if (this._clustered && redisClient) {
+            this._clusterManager = new RedisClusterManager(
+                redisClient, 
+                this._serverId,
+                {
+                    host: this.host,
+                    port: this.port,
+                    ...options.clusterOptions
+                }
+            );
+            // Note: _setupClusterHandlers is async, but constructor can't be async
+            // So we set it up when the server starts
         }
         
         this._startServer();
@@ -946,6 +1173,13 @@ class DenoWebSocketServer extends MessageEmitter {
         this._abortController = new AbortController();
         
         try {
+            // Start cluster manager first if clustering is enabled
+            if (this._clusterManager) {
+                await this._setupClusterHandlers();
+                await this._clusterManager.start();
+                console.log(`Server ${this._serverId} joined cluster`);
+            }
+            
             // Create Deno HTTP server
             this._server = Deno.serve({
                 hostname: this.host,
@@ -953,11 +1187,76 @@ class DenoWebSocketServer extends MessageEmitter {
                 signal: this._abortController.signal,
             }, (request) => this._handleRequest(request));
             
-            console.log(`Deno WebSocket server listening on ${this.host}:${this.port}`);
+            console.log(`Deno WebSocket server listening on ${this.host}:${this.port}${this._clustered ? ' (clustered)' : ''}`);
         } catch (error) {
             console.error('Failed to start Deno WebSocket server:', error);
             throw error;
         }
+    }
+    
+    async _setupClusterHandlers() {
+        if (!this._clusterManager) return;
+        
+        // Handle cluster messages
+        await this._clusterManager.onMessage((clusterMessage) => {
+            this._handleClusterMessage(clusterMessage);
+        });
+    }
+    
+    async _handleClusterMessage(clusterMessage) {
+        try {
+            switch (clusterMessage.type) {
+                case 'forward_message':
+                    await this._handleForwardedMessage(clusterMessage);
+                    break;
+                case 'message':
+                    await this._handleBroadcastMessage(clusterMessage);
+                    break;
+                default:
+                    console.debug('Unknown cluster message type:', clusterMessage.type);
+            }
+        } catch (error) {
+            console.error('Error handling cluster message:', error);
+        }
+    }
+    
+    async _handleForwardedMessage(clusterMessage) {
+        const { target_client, message } = clusterMessage;
+        const [workspace, clientId] = target_client.split(':');
+        
+        // Find local client
+        const targetClient = this._findLocalClient(workspace, clientId);
+        if (targetClient && targetClient.readyState === targetClient.OPEN) {
+            targetClient.send(message);
+        } else {
+            console.warn(`Target client ${target_client} not found locally for forwarded message`);
+        }
+    }
+    
+    async _handleBroadcastMessage(clusterMessage) {
+        const { channel, message } = clusterMessage;
+        
+        // Broadcast to all local clients (implementation depends on your needs)
+        for (const client of this.clients) {
+            if (client.readyState === client.OPEN) {
+                try {
+                    client.send(message);
+                } catch (error) {
+                    console.error('Error broadcasting to local client:', error);
+                }
+            }
+        }
+    }
+    
+    _findLocalClient(workspace, clientId) {
+        // This would need to be enhanced based on how you track client metadata
+        // For now, this is a placeholder
+        for (const client of this.clients) {
+            if (client._workspace === workspace && client._clientId === clientId) {
+                return client;
+            }
+        }
+        return null;
     }
     
     async _handleRequest(request) {
@@ -980,7 +1279,10 @@ class DenoWebSocketServer extends MessageEmitter {
         
         // Handle regular HTTP requests (could serve static files, health checks, etc.)
         if (url.pathname === '/health') {
-            return new Response('OK', { status: 200 });
+            return new Response(JSON.stringify({ status: 'OK', timestamp: new Date().toISOString() }), { 
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }
         
         return new Response('Not Found', { status: 404 });
@@ -996,13 +1298,36 @@ class DenoWebSocketServer extends MessageEmitter {
             // Track the client
             this.clients.add(wrappedSocket);
             
-            // Clean up when the connection closes or errors
-            const cleanup = () => {
+            // Enhanced cleanup for clustering
+            const cleanup = async () => {
                 this.clients.delete(wrappedSocket);
+                
+                // Unregister from cluster if clustering is enabled
+                if (this._clusterManager && wrappedSocket._workspace && wrappedSocket._clientId) {
+                    try {
+                        await this._clusterManager.unregisterClient(wrappedSocket._clientId, wrappedSocket._workspace);
+                    } catch (error) {
+                        console.error('Error unregistering client from cluster:', error);
+                    }
+                }
             };
             
             wrappedSocket.on('close', cleanup);
             wrappedSocket.on('error', cleanup);
+            
+            // Add cluster registration hook for when client identity is established
+            if (this._clusterManager) {
+                wrappedSocket._registerWithCluster = async (workspace, clientId) => {
+                    wrappedSocket._workspace = workspace;
+                    wrappedSocket._clientId = clientId;
+                    try {
+                        await this._clusterManager.registerClient(clientId, workspace);
+                        console.debug(`Client ${workspace}/${clientId} registered with cluster on server ${this._serverId}`);
+                    } catch (error) {
+                        console.error('Error registering client with cluster:', error);
+                    }
+                };
+            }
             
             // Emit connection event (this is what hypha-core listens for)
             this._fire('connection', wrappedSocket);
@@ -1018,8 +1343,14 @@ class DenoWebSocketServer extends MessageEmitter {
     // on(event, handler) is inherited
     // off(event, handler) is inherited
     
-    close() {
+    async close() {
         console.log('Closing Deno WebSocket server...');
+        
+        // Stop cluster manager first
+        if (this._clusterManager) {
+            await this._clusterManager.stop();
+            console.log(`Server ${this._serverId} left cluster`);
+        }
         
         // Close all client connections gracefully
         for (const client of this.clients) {
@@ -1043,6 +1374,97 @@ class DenoWebSocketServer extends MessageEmitter {
     getClients() {
         return Array.from(this.clients);
     }
+    
+    // Clustering methods
+    
+    /**
+     * Send message to a specific client across the cluster
+     */
+    async sendToClient(workspace, clientId, message) {
+        if (!this._clustered || !this._clusterManager) {
+            // Non-clustered mode - only handle local clients
+            const localClient = this._findLocalClient(workspace, clientId);
+            if (localClient && localClient.readyState === localClient.OPEN) {
+                localClient.send(message);
+                return true;
+            }
+            return false;
+        }
+        
+        // Clustered mode - try cluster forwarding
+        try {
+            const wasRemote = await this._clusterManager.forwardMessage(clientId, workspace, message);
+            if (!wasRemote) {
+                // Local delivery
+                const localClient = this._findLocalClient(workspace, clientId);
+                if (localClient && localClient.readyState === localClient.OPEN) {
+                    localClient.send(message);
+                    return true;
+                }
+            }
+            return wasRemote;
+        } catch (error) {
+            console.error(`Failed to send message to client ${workspace}/${clientId}:`, error);
+            return false;
+        }
+    }
+    
+    /**
+     * Broadcast message to all clients across the cluster
+     */
+    async broadcastToCluster(channel, message) {
+        if (!this._clustered || !this._clusterManager) {
+            // Non-clustered mode - only broadcast locally
+            for (const client of this.clients) {
+                if (client.readyState === client.OPEN) {
+                    try {
+                        client.send(message);
+                    } catch (error) {
+                        console.error('Error broadcasting to local client:', error);
+                    }
+                }
+            }
+            return;
+        }
+        
+        // Clustered mode - broadcast to cluster
+        try {
+            await this._clusterManager.broadcastMessage(channel, message);
+        } catch (error) {
+            console.error('Failed to broadcast to cluster:', error);
+        }
+    }
+    
+    /**
+     * Get cluster status and information
+     */
+    async getClusterStatus() {
+        if (!this._clustered || !this._clusterManager) {
+            return {
+                clustered: false,
+                server_id: this._serverId,
+                local_clients: this.clients.size
+            };
+        }
+        
+        try {
+            const activeServers = await this._clusterManager.getActiveServers();
+            return {
+                clustered: true,
+                server_id: this._serverId,
+                active_servers: activeServers,
+                local_clients: this.clients.size
+            };
+        } catch (error) {
+            console.error('Error getting cluster status:', error);
+            return {
+                clustered: true,
+                server_id: this._serverId,
+                error: error.message,
+                local_clients: this.clients.size
+            };
+        }
+    }
 }
 
 /**
@@ -1055,4 +1477,4 @@ class DenoWebSocketClient {
     }
 }
 
-export { DenoWebSocketServer, DenoWebSocketClient, HyphaServiceProxy }; 
+export { DenoWebSocketServer, DenoWebSocketClient, HyphaServiceProxy, RedisClusterManager }; 

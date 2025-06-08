@@ -1,6 +1,5 @@
 import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'hypha-rpc';
-import { imjoyRPC } from 'imjoy-rpc';
 import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert, Environment } from './utils/index.js';
 import { Workspace } from './workspace.js';
 import { toCamelCase } from './utils/index.js';
@@ -135,6 +134,17 @@ class HyphaCore extends MessageEmitter {
         this.redis = redisClient;
         this.port = config.port || 8080;
         
+        // Environment-specific host configuration
+        // Browser: Use 'local-hypha-server' for imjoy plugin compatibility
+        // Server: Use configurable host (default 'localhost') for real deployment
+        if (config.host) {
+            this.host = config.host;
+        } else if (Environment.isBrowser()) {
+            this.host = 'local-hypha-server';
+        } else {
+            this.host = 'localhost';
+        }
+        
         // Use environment-safe base URL detection
         this.baseUrl = config.base_url || Environment.getSafeBaseUrl();
         if (!this.baseUrl.endsWith("/")) {
@@ -154,7 +164,7 @@ class HyphaCore extends MessageEmitter {
             this.wsUrl = config.url;
         }
         else {
-            this.url = config.url || "https://local-hypha-server:" + this.port;
+            this.url = config.url || `https://${this.host}:${this.port}`;
             this.wsUrl = this.url.replace("https://", "wss://").replace("http://", "ws://") + "/ws";
         }
         this.api = null;
@@ -182,7 +192,23 @@ class HyphaCore extends MessageEmitter {
         this._fire(event, data);
     }
 
-    _handleImJoyPlugin(event) {
+    async _handleImJoyPlugin(event) {
+        // Only load imjoyRPC in browser environments when needed
+        if (!Environment.isBrowser()) {
+            console.warn("ImJoy plugin handling is only supported in browser environments");
+            return;
+        }
+
+        let imjoyRPC;
+        try {
+            // Lazy load imjoy-rpc only when needed
+            const imjoyModule = await import('imjoy-rpc');
+            imjoyRPC = imjoyModule.imjoyRPC;
+        } catch (error) {
+            console.error("Failed to load imjoy-rpc:", error);
+            return;
+        }
+
         const contentWindow = event.source;
         const data = event.data;
         let cid = null;
@@ -286,7 +312,9 @@ class HyphaCore extends MessageEmitter {
         const workspace = event.data.workspace;
         if (!workspace) {
             if (event.data.type === "initialized") {
-                this._handleImJoyPlugin(event);
+                this._handleImJoyPlugin(event).catch(error => {
+                    console.error("Error handling ImJoy plugin:", error);
+                });
             }
             else if (this.imjoyPluginWindows.has(event.source)) {
                 const coreConnection = this.imjoyPluginWindows.get(event.source).coreConnection;
@@ -948,4 +976,17 @@ function parseJwt(token) {
     return JSON.parse(jsonPayload);
 }
 
-export { HyphaCore, connectToServer, imjoyRPC, hyphaWebsocketClient, WebSocket, Workspace, WebsocketRPCConnection };
+// Lazy export for imjoyRPC - only available in browser environments
+let _imjoyRPC = null;
+async function getImjoyRPC() {
+    if (!Environment.isBrowser()) {
+        throw new Error("imjoyRPC is only available in browser environments");
+    }
+    if (!_imjoyRPC) {
+        const imjoyModule = await import('imjoy-rpc');
+        _imjoyRPC = imjoyModule.imjoyRPC;
+    }
+    return _imjoyRPC;
+}
+
+export { HyphaCore, connectToServer, getImjoyRPC as imjoyRPC, hyphaWebsocketClient, WebSocket, Workspace, WebsocketRPCConnection };

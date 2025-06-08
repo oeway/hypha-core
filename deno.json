@@ -1,0 +1,25 @@
+{
+  "nodeModulesDir": true,
+  "imports": {
+    "redis": "npm:redis@4.6.13",
+    "mock-socket": "npm:mock-socket@9.3.1",
+    "hypha-rpc": "npm:hypha-rpc@0.20.32",
+    "imjoy-rpc": "npm:imjoy-rpc@0.5.48",
+    "@msgpack/msgpack": "npm:@msgpack/msgpack@2.8.0"
+  },
+  "tasks": {
+    "start": "deno run --allow-all src/hypha-core.js",
+    "cluster": "deno run --allow-all cluster-examples/cluster-example.js",
+    "cluster:real": "deno run --allow-all cluster-examples/cluster-example.js --real-redis",
+    "cluster:test": "deno run --allow-all cluster-examples/test-full-cluster.js",
+    "cluster:perf": "deno run --allow-all cluster-examples/performance-test.js",
+    "test": "deno test --allow-all",
+    "perf:compare": "deno run --allow-all test/performance/comparison-benchmark.js",
+    "perf:single": "deno run --allow-all test/performance/single-instance-benchmark.js",
+    "perf:cluster": "deno run --allow-all test/performance/cluster-benchmark.js"
+  },
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"]
+  }
+} 

@@ -1,0 +1,29 @@
+FROM denoland/deno:1.39.4
+
+# Set working directory
+WORKDIR /app
+
+# Copy configuration and source code
+COPY deno.json ./
+COPY src/ ./src/
+COPY cluster-examples/redis-client.js ./cluster-examples/
+COPY cluster-examples/cluster-example.js ./cluster-examples/
+COPY cluster-examples/real-cluster-entrypoint.js ./
+
+# Set default environment variables
+ENV DENO_ENV=production
+ENV SERVER_PORT=8080
+ENV REDIS_URL=redis://redis:6379
+
+# Expose port
+EXPOSE 8080
+
+# Cache modules and dependencies
+RUN deno cache real-cluster-entrypoint.js
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD deno eval "const response = await fetch('http://localhost:${SERVER_PORT}/default/services'); console.log(response.status);" || exit 1
+
+# Run the real clustered server
+CMD ["deno", "run", "--allow-all", "real-cluster-entrypoint.js"] 

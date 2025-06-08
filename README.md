@@ -466,31 +466,6 @@ See [`examples/deno-example.js`](./examples/deno-example.js) for a full working 
 - 🧮 Computational services (prime number checking, fibonacci)
 - 📊 Environment detection and feature availability
 
-### 💡 **Migration from Browser Polyfills**
-
-**Before (with polyfills):**
-```javascript
-// Complex polyfill setup required
-if (typeof globalThis.window === 'undefined') {
-    globalThis.window = globalThis;
-    globalThis.document = { createElement: () => ({}) };
-    // ... more polyfill code
-}
-const { HyphaCore } = await import("hypha-core");
-```
-
-**After (environment-aware):**
-```javascript
-// Clean, simple import - no polyfills needed!
-import { HyphaCore } from 'hypha-core';
-
-const hyphaCore = new HyphaCore({
-    port: 9527,
-    base_url: 'http://localhost:9527/'
-});
-const api = await hyphaCore.start(); // Just works! ✨
-```
-
 ## Configuration Options
 
 ### Constructor Options
