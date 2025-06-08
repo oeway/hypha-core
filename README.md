@@ -195,7 +195,7 @@ import { HyphaCore } from '../src/hypha-core.js';
 import { DenoWebSocketServer, DenoWebSocketClient } from '../src/deno-websocket-server.js';
 
 const hyphaCore = new HyphaCore({
-    url: "https://localhost:9527",
+    url: "http://localhost:9527",
     ServerClass: DenoWebSocketServer,      // Use real WebSocket server
     WebSocketClass: DenoWebSocketClient,   // Use real WebSocket client
     jwtSecret: "deno-hypha-secret-key",

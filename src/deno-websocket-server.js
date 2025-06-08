@@ -3,7 +3,8 @@
  * 
  * This module provides a wrapper around Deno's native HTTP server and WebSocket
  * to mimic the mock-socket Server API, allowing hypha-core to work with real
- * WebSocket connections in Deno.
+ * WebSocket connections in Deno. It also provides HTTP service proxy functionality
+ * similar to the Python hypha server.
  */
 
 import { MessageEmitter } from './utils/index.js';
@@ -96,6 +97,455 @@ class DenoWebSocketWrapper extends MessageEmitter {
 }
 
 /**
+ * HTTP Service Proxy for hypha-core services
+ */
+class HyphaServiceProxy {
+    constructor(hyphaCore) {
+        this.hyphaCore = hyphaCore;
+    }
+
+    /**
+     * Create user context for requests
+     */
+    createUserContext(authToken = null) {
+        if (authToken) {
+            try {
+                // Remove 'Bearer ' prefix if present
+                const token = authToken.replace(/^Bearer\s+/, '');
+                
+                // Parse the token to get user info
+                const userInfo = this.hyphaCore.parseToken(token);
+                
+                return {
+                    ws: "default",
+                    from: `default/http-client-${userInfo.id}`,
+                    user: userInfo
+                };
+            } catch (error) {
+                console.warn('Invalid auth token, using anonymous context:', error.message);
+            }
+        }
+        
+        // Return anonymous context
+        return {
+            ws: "default",
+            from: "default/anonymous-http-client",
+            user: {
+                id: "anonymous",
+                is_anonymous: true,
+                email: "anonymous@localhost",
+                roles: []
+            }
+        };
+    }
+
+    /**
+     * Extract authorization token from request headers
+     */
+    extractAuthToken(request) {
+        const authHeader = request.headers.get('authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            return authHeader;
+        }
+        return null;
+    }
+
+    /**
+     * Get workspace interface by accessing workspace manager with proper context
+     */
+    async getWorkspaceInterface(workspace, authToken) {
+        if (!this.hyphaCore || !this.hyphaCore.workspaceManager) {
+            throw new Error('Workspace manager not available');
+        }
+        
+        // Create proper context based on authentication
+        const context = this.createUserContext(authToken);
+        
+        // Get default service functions
+        const defaultService = this.hyphaCore.workspaceManager.getDefaultService();
+        
+        // Create a version where ALL default service functions have context bound consistently
+        const boundDefaultService = {};
+        
+        // Bind context to all default service functions for consistency
+        for (const [key, value] of Object.entries(defaultService)) {
+            if (typeof value === 'function') {
+                // Bind context to all function properties
+                boundDefaultService[key] = (...args) => value(...args, context);
+            } else {
+                // Keep non-function properties as-is
+                boundDefaultService[key] = value;
+            }
+        }
+        
+        return boundDefaultService;
+    }
+
+    /**
+     * Serialize objects for HTTP response, similar to Python version
+     */
+    serialize(obj) {
+        if (obj === null || obj === undefined) {
+            return null;
+        }
+        if (typeof obj === 'number' || typeof obj === 'string' || typeof obj === 'boolean') {
+            return obj;
+        }
+        if (Array.isArray(obj)) {
+            return obj.map(item => this.serialize(item));
+        }
+        if (typeof obj === 'object') {
+            if (obj instanceof Date) {
+                return obj.toISOString();
+            }
+            const serialized = {};
+            for (const [key, value] of Object.entries(obj)) {
+                serialized[key] = this.serialize(value);
+            }
+            return serialized;
+        }
+        if (typeof obj === 'function') {
+            if (obj.__schema__) {
+                return { type: 'function', function: obj.__schema__ };
+            } else {
+                return { type: 'function', function: { name: obj.name } };
+            }
+        }
+        return obj;
+    }
+
+    /**
+     * Extract query parameters and normalize values
+     */
+    extractQueryParams(url) {
+        const urlObj = new URL(url, 'http://localhost');
+        const params = {};
+        for (const [key, value] of urlObj.searchParams.entries()) {
+            // Normalize numbers similar to Python version
+            if (/^\d+$/.test(value)) {
+                params[key] = parseInt(value);
+            } else if (/^\d+\.\d+$/.test(value)) {
+                params[key] = parseFloat(value);
+            } else {
+                params[key] = value;
+            }
+        }
+        return params;
+    }
+
+    /**
+     * Extract request body based on content type
+     */
+    async extractRequestBody(request) {
+        const contentType = request.headers.get('content-type') || 'application/json';
+        
+        if (request.method === 'GET') {
+            return {};
+        }
+        
+        if (request.method === 'POST') {
+            const body = await request.text();
+            if (!body) return {};
+            
+            if (contentType.includes('application/json')) {
+                return JSON.parse(body);
+            }
+            // Note: MessagePack support would need additional library
+            // For now, only support JSON
+            throw new Error(`Unsupported content-type: ${contentType}`);
+        }
+        
+        throw new Error(`Unsupported request method: ${request.method}`);
+    }
+
+    /**
+     * Create error response
+     */
+    createErrorResponse(status, message, detail = null) {
+        return new Response(JSON.stringify({
+            success: false,
+            detail: detail || message
+        }), {
+            status,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    /**
+     * Create success response
+     */
+    createSuccessResponse(data, status = 200) {
+        return new Response(JSON.stringify(data), {
+            status,
+            headers: { 
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Headers': 'Authorization,Content-Type',
+            }
+        });
+    }
+
+    /**
+     * Handle OPTIONS requests for CORS
+     */
+    handleOptions(request) {
+        return new Response(null, {
+            status: 200,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Headers': 'Authorization,Content-Type',
+                'Access-Control-Max-Age': '86400',
+            }
+        });
+    }
+
+    /**
+     * Get workspace services - GET /{workspace}/services
+     */
+    async getWorkspaceServices(workspace, request, queryParams = {}) {
+        try {
+            const authToken = this.extractAuthToken(request);
+            
+                    // Get workspace interface with proper context
+        const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
+        const services = await workspaceInterface.listServices({});
+            
+            // Serialize and remove workspace prefix from service IDs
+            const serializedServices = this.serialize(services);
+            if (Array.isArray(serializedServices)) {
+                serializedServices.forEach(service => {
+                    if (service.id && service.id.includes('/')) {
+                        service.id = service.id.split('/').pop();
+                    }
+                });
+            }
+            
+            return this.createSuccessResponse(serializedServices);
+        } catch (error) {
+            console.error('Error getting workspace services:', error);
+            return this.createErrorResponse(404, 'Failed to get workspace services', error.message);
+        }
+    }
+
+    /**
+     * Get service info - GET /{workspace}/services/{service_id}
+     */
+    async getServiceInfo(workspace, serviceId, request, queryParams = {}) {
+        try {
+            const authToken = this.extractAuthToken(request);
+            
+            // Get workspace interface with proper context
+            const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
+            
+            // Handle special case for 'ws' service
+            if (serviceId === 'ws') {
+                const serviceInfo = {
+                    id: 'ws',
+                    name: 'Workspace Service',
+                    description: 'Default workspace management service',
+                    config: { require_context: true, visibility: 'public' },
+                    type: 'functions'
+                };
+                return this.createSuccessResponse(serviceInfo);
+            }
+            
+            // Use getService to get the service info
+            const mode = queryParams._mode || null;
+            const service = await workspaceInterface.getService(serviceId, { mode });
+            
+            if (!service) {
+                return this.createErrorResponse(404, `Service ${serviceId} not found`);
+            }
+            
+            // Create service info object similar to what getServiceInfo would return
+            const serviceInfo = {
+                id: serviceId,
+                name: service.name || serviceId,
+                description: service.description || `Service ${serviceId}`,
+                config: service.config || {},
+                type: service.type || 'functions'
+            };
+            
+            return this.createSuccessResponse(this.serialize(serviceInfo));
+        } catch (error) {
+            console.error('Error getting service info:', error);
+            return this.createErrorResponse(404, 'Service not found', error.message);
+        }
+    }
+
+    /**
+     * Call service function - GET/POST /{workspace}/services/{service_id}/{function_key}
+     */
+    async callServiceFunction(workspace, serviceId, functionKey, request) {
+        try {
+            const queryParams = this.extractQueryParams(request.url);
+            const requestBody = await this.extractRequestBody(request);
+            
+            // Merge query params and body for function arguments
+            const functionKwargs = { ...queryParams, ...requestBody };
+            
+            // Remove control parameters
+            delete functionKwargs.workspace;
+            delete functionKwargs.service_id;
+            delete functionKwargs.function_key;
+            delete functionKwargs._mode;
+            
+            const authToken = this.extractAuthToken(request);
+            const context = this.createUserContext(authToken);
+            
+            // Get workspace interface with proper context
+            const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
+            
+            let service;
+            if (serviceId === 'ws') {
+                // For workspace service, use the workspace interface itself
+                service = workspaceInterface;
+            } else {
+                const mode = queryParams._mode || null;
+                service = await workspaceInterface.getService(serviceId, { mode });
+                
+                if (!service) {
+                    return this.createErrorResponse(404, `Service ${serviceId} not found`);
+                }
+            }
+            
+            // Get the function by key (support dot notation for nested objects)
+            const func = this.getNestedValue(service, functionKey);
+            
+            if (!func) {
+                return this.createErrorResponse(404, `Function ${functionKey} not found`);
+            }
+            
+            // If it's not a function, just return the value
+            if (typeof func !== 'function') {
+                return this.createSuccessResponse(this.serialize(func));
+            }
+            
+            // Call the function - context is already bound in getWorkspaceInterface
+            let result;
+            
+            // For workspace service functions, we need to handle them differently
+            // since they're already bound with context
+            if (serviceId === 'ws') {
+                // For workspace services, the functions are already bound with context
+                // We need to call them with just the named parameters (not using parameter parsing)
+                // since the bound function signature is (...args) => original(...args, context)
+                
+                // For now, handle common parameter patterns manually
+                if (functionKey === 'echo' && functionKwargs.msg !== undefined) {
+                    result = func(functionKwargs.msg);
+                } else if (functionKey === 'log' && functionKwargs.msg !== undefined) {
+                    result = func(functionKwargs.msg);
+                } else if (functionKey === 'listServices') {
+                    result = func(functionKwargs);
+                } else if (functionKey === 'getService') {
+                    result = func(functionKwargs.serviceId || functionKwargs.service_id, functionKwargs);
+                } else {
+                    // Fallback: call with all values as arguments
+                    const args = Object.values(functionKwargs);
+                    result = func(...args);
+                }
+            } else {
+                // For regular services, try to extract parameter names from function signature
+                const funcStr = func.toString();
+                const paramMatch = funcStr.match(/\(([^)]*)\)/);
+                
+                if (paramMatch && paramMatch[1].trim()) {
+                    // Extract parameter names
+                    const params = paramMatch[1].split(',').map(p => p.trim().split('=')[0].trim());
+                    
+                    // Build argument array based on parameter names
+                    const args = [];
+                    for (const paramName of params) {
+                        args.push(functionKwargs[paramName]);
+                    }
+                    
+                    result = func(...args);
+                } else {
+                    // Function has no parameters
+                    result = func();
+                }
+            }
+            
+            // Handle async functions
+            if (result && typeof result.then === 'function') {
+                result = await result;
+            }
+            
+            return this.createSuccessResponse(this.serialize(result));
+            
+        } catch (error) {
+            console.error('Error calling service function:', error);
+            return this.createErrorResponse(400, 'Function call failed', error.message);
+        }
+    }
+
+    /**
+     * Get nested value from object using dot notation
+     */
+    getNestedValue(obj, path) {
+        const keys = path.split('.');
+        let current = obj;
+        
+        for (const key of keys) {
+            if (current && typeof current === 'object' && key in current) {
+                current = current[key];
+            } else {
+                return null;
+            }
+        }
+        
+        return current;
+    }
+
+    /**
+     * Route HTTP requests to appropriate handlers
+     */
+    async routeRequest(request) {
+        const url = new URL(request.url);
+        const pathParts = url.pathname.split('/').filter(part => part);
+        
+        // Handle CORS preflight
+        if (request.method === 'OPTIONS') {
+            return this.handleOptions(request);
+        }
+        
+        // Route pattern: /{workspace}/services/{service_id}/{function_key}
+        if (pathParts.length >= 2 && pathParts[1] === 'services') {
+            const workspace = pathParts[0];
+            
+            if (pathParts.length === 2) {
+                // GET /{workspace}/services
+                if (request.method === 'GET') {
+                    const queryParams = this.extractQueryParams(request.url);
+                    return await this.getWorkspaceServices(workspace, request, queryParams);
+                }
+            } else if (pathParts.length === 3) {
+                // GET /{workspace}/services/{service_id}
+                const serviceId = pathParts[2];
+                if (request.method === 'GET') {
+                    const queryParams = this.extractQueryParams(request.url);
+                    return await this.getServiceInfo(workspace, serviceId, request, queryParams);
+                }
+            } else if (pathParts.length >= 4) {
+                // GET/POST /{workspace}/services/{service_id}/{function_key}
+                const serviceId = pathParts[2];
+                const functionKey = pathParts.slice(3).join('.');  // Support nested function calls
+                
+                if (request.method === 'GET' || request.method === 'POST') {
+                    return await this.callServiceFunction(workspace, serviceId, functionKey, request);
+                }
+            }
+        }
+        
+        // Route not found
+        return this.createErrorResponse(404, 'Route not found');
+    }
+}
+
+/**
  * Server wrapper that mimics mock-socket Server API
  */
 class DenoWebSocketServer extends MessageEmitter {
@@ -111,6 +561,13 @@ class DenoWebSocketServer extends MessageEmitter {
         this.clients = new Set();
         this._server = null;
         this._abortController = null;
+        this._hyphaCore = options.hyphaCore || null;
+        this._serviceProxy = null;
+        
+        // Initialize service proxy if hypha-core is provided
+        if (this._hyphaCore) {
+            this._serviceProxy = new HyphaServiceProxy(this._hyphaCore);
+        }
         
         this._startServer();
     }
@@ -139,6 +596,15 @@ class DenoWebSocketServer extends MessageEmitter {
         // Check if this is a WebSocket upgrade request
         if (request.headers.get('upgrade') === 'websocket') {
             return this._handleWebSocketUpgrade(request);
+        }
+        
+        // Handle service proxy requests if hypha-core is available
+        if (this._serviceProxy) {
+            // Check if this is a service-related request
+            const pathParts = url.pathname.split('/').filter(part => part);
+            if (pathParts.length >= 2 && pathParts[1] === 'services') {
+                return await this._serviceProxy.routeRequest(request);
+            }
         }
         
         // Handle regular HTTP requests (could serve static files, health checks, etc.)
@@ -218,4 +684,4 @@ class DenoWebSocketClient {
     }
 }
 
-export { DenoWebSocketServer, DenoWebSocketClient }; 
+export { DenoWebSocketServer, DenoWebSocketClient, HyphaServiceProxy }; 

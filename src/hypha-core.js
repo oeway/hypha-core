@@ -315,7 +315,13 @@ class HyphaCore extends MessageEmitter {
             throw new Error(`Server already running at ${this.url}`);
         }
         else {
-            this.server = new this.ServerClass(this.wsUrl, { mock: false });
+            // Pass hyphaCore to server constructor to enable HTTP service endpoints
+            const serverOptions = { 
+                mock: false,
+                hyphaCore: this  // Enable HTTP service proxy functionality
+            };
+            
+            this.server = new this.ServerClass(this.wsUrl, serverOptions);
             HyphaCore.servers[this.url] = this.server;
             this.messageHandler = this._handleClientMessage.bind(this);
             
@@ -326,12 +332,7 @@ class HyphaCore extends MessageEmitter {
                 console.log(`Running in ${this.environment} environment - window message handling disabled`);
             }
             
-            this.workspaceManager = new Workspace(this);
-            await this.workspaceManager.setup({
-                client_id: this.workspaceManagerId,
-                method_timeout: 60,
-                default_service: this.defaultServices,
-            })
+      
         }
         
         this.server.on('connection', async websocket => {
@@ -343,15 +344,18 @@ class HyphaCore extends MessageEmitter {
         config.WebSocketClass = this.WebSocketClass;
         assert(config.workspace === undefined, "workspace is not allowed to be set in the config");
         assert(config.client_id === undefined, "client_id is not allowed to be set in the config");
+                
+        this.workspaceManager = new Workspace(this);
+        await this.workspaceManager.setup({
+            client_id: this.workspaceManagerId,
+            method_timeout: 60,
+            default_service: this.defaultServices,
+        })
 
-        // create root api
-        config.workspace = "default";
-        config.client_id = "root";
-        const rawApi = await connectToServer(config);
-        
-        // Create camelCase wrapper for the API
-        const api = this._createCamelCaseWrapper(rawApi);
-        
+        // Instead of creating a root API connection that causes circular dependency,
+        // we'll create an API wrapper that directly accesses the workspace manager
+        const api = this._createDirectAPIWrapper();
+
         // expose root api
         this.api = api;
         return api;
@@ -758,6 +762,47 @@ class HyphaCore extends MessageEmitter {
             this.server.close();
             delete HyphaCore.servers[this.url];
         }
+    }
+
+    _createDirectAPIWrapper() {
+        // Create API wrapper that directly accesses workspace manager without WebSocket connection
+        const context = {
+            ws: "default",
+            from: "default/root", 
+            user: {
+                id: "root",
+                is_anonymous: false,
+                email: "root@localhost",
+                roles: ["admin"],
+                scopes: []
+            }
+        };
+
+        const api = {
+            // Workspace management functions
+            registerService: async (service) => {
+                return await this.workspaceManager.registerService(service, context);
+            },
+            
+            unregisterService: async (serviceId) => {
+                return await this.workspaceManager.unregisterService(serviceId, context);
+            },
+            
+            listServices: async (query = {}) => {
+                return await this.workspaceManager.listServices(query, context);
+            },
+            
+            getService: async (serviceId, options = {}) => {
+                return await this.workspaceManager.getService(serviceId, options, context);
+            },
+            
+            close: () => {
+                this.close();
+            }
+        };
+
+        // Add camelCase versions
+        return this._createCamelCaseWrapper(api);
     }
 }
 

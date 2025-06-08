@@ -114,6 +114,9 @@ export class Workspace {
         this.eventBus = hyphaCore;
         this.serverUrl = hyphaCore.url;
         this.baseUrl = hyphaCore.baseUrl;
+        this._rpc = null;
+        // Add local service storage for services registered directly
+        this._localServices = new Map();
     }
 
     waitForClient(cid, timeout) {
@@ -224,14 +227,9 @@ export class Workspace {
         
         // If service ID is not already constructed, validate and construct it
         if (!isAlreadyConstructed) {
-            // Check if service ID has proper colon structure first - this is the primary requirement
-            // Exception: "built-in" and "default" standalone services don't need colons
-            if (!service.id.includes(":") && service.id !== "built-in" && service.id !== "default") {
-                throw new Error("Service id must contain ':'");
-            }
-            // If it has colons, ensure they're only allowed for built-in and default services
-            if (service.id.includes(":") && !service.id.endsWith(":built-in") && !service.id.endsWith(":default")) {
-                throw new Error("Service id must not contain ':' except for :built-in and :default");
+            if(!service.id.includes(":")){
+                // add a colon to the service id with the client id (without the workspace)
+                service.id = `${clientId.split("/")[1]}:${service.id}`;
             }
             // Service ID should not contain '/' if not already fully constructed
             if (service.id.includes("/")) { 
@@ -242,12 +240,46 @@ export class Workspace {
         }
         service.app_id = service.app_id || "*";
         service.config.visibility = service.config.visibility || "protected";
+        
+        // Check if this is a local service (has function properties)
+        const isLocalService = this._hasServiceFunctions(service);
+        if (isLocalService) {
+            // Store the complete service object locally for direct access
+            const localServiceKey = `${service.id}@${service.app_id}`;
+            this._localServices.set(localServiceKey, service);
+            console.info(`Storing local service: ${localServiceKey}`);
+        }
+        
         // Check if the service already exists
         const serviceExists = this._redis.exists(`services:*:${service.id}@${service.app_id}`);
         const key = `services:${service.config.visibility}:${service.id}@${service.app_id}`;
+        
+        // Store service metadata in Redis (but not the function implementations for local services)
+        const serviceMetadata = {};
         for(const [k, v] of Object.entries(service)) {
+            // For local services, don't store function implementations in Redis
+            if (isLocalService && typeof v === 'function') {
+                serviceMetadata[k] = { type: 'function', name: v.name || k };
+            } else if (isLocalService && typeof v === 'object' && v !== null && !Array.isArray(v)) {
+                // Handle nested function objects like math.add
+                const objMetadata = {};
+                for (const [subK, subV] of Object.entries(v)) {
+                    if (typeof subV === 'function') {
+                        objMetadata[subK] = { type: 'function', name: subV.name || subK };
+                    } else {
+                        objMetadata[subK] = subV;
+                    }
+                }
+                serviceMetadata[k] = objMetadata;
+            } else {
+                serviceMetadata[k] = v;
+            }
+        }
+        
+        for(const [k, v] of Object.entries(serviceMetadata)) {
             this._redis.hset(key, k, v);
         }
+        
         if (serviceExists) {
             if (key.includes(":built-in@")) {
                 this.eventBus.emit("client_updated", { id: clientId, workspace: ws });
@@ -260,9 +292,11 @@ export class Workspace {
             // Default service created by api.export({}), typically used for hypha apps
             if (key.includes(":default@")) {
                 try {
-                    const svc = await this._rpc.get_remote_service(`${clientId}:default`);
-                    if (svc.setup) {
-                        await svc.setup();
+                    if (this._rpc) {
+                        const svc = await this._rpc.get_remote_service(`${clientId}:default`);
+                        if (svc.setup) {
+                            await svc.setup();
+                        }
                     }
                 } catch (e) {
                     console.error(`Failed to run setup for default service \`${clientId}\`: ${e}`);
@@ -277,6 +311,30 @@ export class Workspace {
             }
         }
     }
+
+    /**
+     * Check if a service object contains function properties (indicating it's a local service)
+     */
+    _hasServiceFunctions(service) {
+        for (const [key, value] of Object.entries(service)) {
+            // Skip metadata fields
+            if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
+                continue;
+            }
+            // Check for functions or objects containing functions
+            if (typeof value === 'function') {
+                return true;
+            }
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                for (const subValue of Object.values(value)) {
+                    if (typeof subValue === 'function') {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
     
     async unregisterService(serviceId, context) {
         const ws = context.ws;
@@ -290,6 +348,12 @@ export class Workspace {
             serviceId = serviceId + "@*";
         }
 
+        // Remove from local services if it exists
+        if (this._localServices.has(serviceId)) {
+            this._localServices.delete(serviceId);
+            console.info(`Removed local service: ${serviceId}`);
+        }
+
         const key = `services:*:${serviceId}`;
         console.info(`Removing service: ${key}`);
     
@@ -299,9 +363,9 @@ export class Workspace {
         if (serviceExists) {
             this._redis.delete(key);
             if (key.includes(":built-in@")) {
-                this.eventBus.emit("client_disconnected", { id: clientId, workspace: ws });
+                this.eventBus.emit("client_disconnected", { id: context.from, workspace: ws });
             } else {
-                this.eventBus.emit("service_removed", service);
+                this.eventBus.emit("service_removed", { id: serviceId });
             }
         } else {
             console.warning(`Service ${key} does not exist and cannot be removed.`);
@@ -363,12 +427,22 @@ export class Workspace {
             query.client_id = serviceId.split("/")[1].split(":")[0];
             query.workspace = workspace;
             if (!serviceId.includes("*")) {
-                const serviceApi = await this._rpc.get_remote_service(serviceId, timeout);
-                if (serviceApi) {
-                    return this.patchServiceConfig(workspace, serviceApi);
-                } else {
-                    return null;
+                // First check if this is a local service
+                const localServiceKey = `${serviceId}@*`;
+                if (this._localServices.has(localServiceKey)) {
+                    console.info(`Found local service (direct): ${localServiceKey}`);
+                    const localService = this._localServices.get(localServiceKey);
+                    return this.patchServiceConfig(workspace, localService);
                 }
+                
+                // If not local, try to get it via RPC (for remote services)
+                if (this._rpc) {
+                    const serviceApi = await this._rpc.get_remote_service(serviceId, timeout);
+                    if (serviceApi) {
+                        return this.patchServiceConfig(workspace, serviceApi);
+                    }
+                }
+                return null;
             }
         }
     
@@ -441,9 +515,21 @@ export class Workspace {
                 serviceId = parts[2] + ":" + parts[3];
                 [serviceId, appId] = serviceId.split("@");
                 const workspace = serviceId.split("/")[0];
-                const serviceApi = await this._rpc.get_remote_service(serviceId, timeout);
-                if (serviceApi) {
-                    return this.patchServiceConfig(workspace, serviceApi);
+                
+                // First check if this is a local service
+                const localServiceKey = `${serviceId}@${appId}`;
+                if (this._localServices.has(localServiceKey)) {
+                    console.info(`Found local service: ${localServiceKey}`);
+                    const localService = this._localServices.get(localServiceKey);
+                    return this.patchServiceConfig(workspace, localService);
+                }
+                
+                // If not local, try to get it via RPC (for remote services)
+                if (this._rpc) {
+                    const serviceApi = await this._rpc.get_remote_service(serviceId, timeout);
+                    if (serviceApi) {
+                        return this.patchServiceConfig(workspace, serviceApi);
+                    }
                 }
             } catch (e) {
                 if (skipTimeout && e instanceof TimeoutError) {
@@ -918,8 +1004,10 @@ export class Workspace {
                 return service;
             },
             "get_service": this.getService.bind(this),
+            "getService": this.getService.bind(this),  // camelCase alias
 
             "list_services": this.listServices.bind(this),
+            "listServices": this.listServices.bind(this),  // camelCase alias
 
             "generate_token": async (tokenConfig, context) => {
                 // Handle default value for tokenConfig
