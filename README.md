@@ -50,6 +50,12 @@ Hypha Core maintains exceptional quality through comprehensive testing:
 - **Workspace Isolation** with proper service visibility and permission management
 - **Multi-Client Authentication Workflows** demonstrating provider/consumer/restricted user patterns
 
+### 🚀 **Advanced Integration Features**
+- **Custom Web Worker Script Loading** - Direct loading of worker scripts via HTTP, blob, and file URLs
+- **Full Hypha RPC Integration** - Custom workers with complete service registration and communication
+- **Performance Optimized Workers** - CPU-intensive computations in dedicated worker threads
+- **Multiple URL Support** - HTTP/HTTPS, blob URLs, and local file loading for maximum flexibility
+
 ### 🌐 **Cross-Browser Compatibility Verified**
 - **Chromium** ✅ - All 117 tests passing
 - **Firefox** ✅ - All 117 tests passing  
@@ -1343,72 +1349,301 @@ console.log("App state:", appState);
 
 ### WebWorker Support
 
-Similar to iframes, you can also create web workers that connect to Hypha Core:
+Hypha Core supports two approaches for web worker integration:
 
-**Web Worker Example (`my-worker.js`):**
+#### 1. Traditional ImJoy Plugin Format
+Load workers using the ImJoy plugin format with embedded configuration:
+
+```javascript
+// Load worker with ImJoy plugin format (.imjoy.html files)
+const worker = await api.loadApp({
+    src: "https://example.com/my-plugin.imjoy.html"
+});
+```
+
+#### 2. Custom Web Worker Scripts (New!)
+
+**🚀 Direct Custom Worker Script Loading**
+
+You can now load custom web worker scripts directly using any URL (HTTP, HTTPS, blob, or file URLs):
+
+```javascript
+// Load custom worker script directly
+const customWorker = await api.loadApp({
+    type: 'web-worker',                    // Specify worker type
+    src: 'https://example.com/my-custom-worker.js',  // Direct script URL
+    name: 'My Custom Worker',
+    description: 'Custom computational worker'
+});
+
+// Works with different URL types:
+// HTTP/HTTPS URLs
+const httpWorker = await api.loadApp({
+    type: 'web-worker',
+    src: 'https://cdn.example.com/workers/math-worker.js'
+});
+
+// Blob URLs (for dynamically generated scripts)
+const blob = new Blob([workerCode], { type: 'application/javascript' });
+const blobUrl = URL.createObjectURL(blob);
+const blobWorker = await api.loadApp({
+    type: 'web-worker', 
+    src: blobUrl
+});
+
+// Local file URLs
+const fileWorker = await api.loadApp({
+    type: 'web-worker',
+    src: '/static/workers/data-processor.js'
+});
+```
+
+#### Custom Worker Script Structure
+
+**Complete Custom Worker Example (`computational-worker.js`):**
 
 ```javascript
 // Import Hypha RPC client in the worker
 importScripts('https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.26/dist/hypha-rpc-websocket.min.js');
 
+console.log('🔧 Custom Computational Worker: Starting...');
+
 // Connect to Hypha Core from the worker
-hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (api) => {
-    console.log("Worker connected to Hypha Core", api);
+hyphaWebsocketClient.setupLocalClient({
+    enable_execution: true,
+    workspace: "worker-workspace",
+    client_id: "computational-worker-001"
+}).then(async (api) => {
+    console.log('✅ Worker connected to Hypha Core');
     
-    // Export worker services
-    await api.export({
-        name: "Worker Services",
+    // Export comprehensive worker services
+    const exportedServices = await api.export({
+        id: 'computational-services',
+        name: 'Computational Services',
+        description: 'CPU-intensive computations optimized for WebWorker environment',
         
-        async heavyComputation(data) {
-            // Simulate heavy computation
-            const result = [];
-            for (let i = 0; i < data.length; i++) {
-                // Simulate complex calculation
-                let sum = 0;
-                for (let j = 0; j < 1000000; j++) {
-                    sum += Math.sqrt(data[i] * j);
-                }
-                result.push(sum);
+        // Mathematical computations
+        fibonacci: function(n) {
+            console.log(`🔢 Worker: Computing fibonacci(${n})`);
+            if (n <= 1) return n;
+            let a = 0, b = 1;
+            for (let i = 2; i <= n; i++) {
+                [a, b] = [b, a + b];
+            }
+            return b;
+        },
+        
+        factorial: function(n) {
+            console.log(`🔢 Worker: Computing factorial(${n})`);
+            if (n <= 1) return 1;
+            let result = 1;
+            for (let i = 2; i <= n; i++) {
+                result *= i;
             }
             return result;
         },
         
-        async processInBackground(task) {
-            console.log("Processing task in background:", task);
+        // Prime number operations
+        isPrime: function(n) {
+            if (n <= 1) return false;
+            if (n <= 3) return true;
+            if (n % 2 === 0 || n % 3 === 0) return false;
+            for (let i = 5; i * i <= n; i += 6) {
+                if (n % i === 0 || n % (i + 2) === 0) return false;
+            }
+            return true;
+        },
+        
+        // Array processing operations
+        processArray: function(arr, operation) {
+            const operations = {
+                sum: () => arr.reduce((a, b) => a + b, 0),
+                product: () => arr.reduce((a, b) => a * b, 1),
+                average: () => arr.reduce((a, b) => a + b, 0) / arr.length,
+                max: () => Math.max(...arr),
+                min: () => Math.min(...arr),
+                sort: () => [...arr].sort((a, b) => a - b),
+                reverse: () => [...arr].reverse()
+            };
             
-            // Simulate async processing
-            await new Promise(resolve => setTimeout(resolve, task.delay || 1000));
+            if (!operations[operation]) {
+                throw new Error(`Unknown operation: ${operation}`);
+            }
+            
+            return operations[operation]();
+        },
+        
+        // Heavy computation simulation
+        heavyComputation: function(iterations = 1000000) {
+            console.log(`⚡ Worker: Running heavy computation with ${iterations} iterations`);
+            const startTime = Date.now();
+            let result = 0;
+            
+            for (let i = 0; i < iterations; i++) {
+                result += Math.sin(i) * Math.cos(i) * Math.tan(i / 1000);
+            }
+            
+            const endTime = Date.now();
+            const duration = endTime - startTime;
             
             return {
-                task: task.name,
-                result: "completed",
-                processedAt: new Date().toISOString()
+                result: result,
+                iterations: iterations,
+                duration: duration,
+                performance: `${iterations / duration} ops/ms`
+            };
+        },
+        
+        // Worker info and capabilities
+        getWorkerInfo: function() {
+            return {
+                type: 'webworker',
+                environment: 'dedicated-worker',
+                timestamp: new Date().toISOString(),
+                capabilities: [
+                    'fibonacci', 'factorial', 'isPrime', 
+                    'processArray', 'heavyComputation'
+                ],
+                userAgent: navigator.userAgent,
+                hardwareConcurrency: navigator.hardwareConcurrency
             };
         }
     });
     
-}).catch(console.error);
+    console.log('✅ Custom Worker: All services registered successfully');
+    
+    // Notify main thread that worker is ready
+    self.postMessage({ 
+        type: 'worker_ready', 
+        message: 'Custom worker services registered successfully',
+        services: Object.keys(exportedServices).filter(key => typeof exportedServices[key] === 'function')
+    });
+    
+}).catch(error => {
+    console.error('❌ Custom Worker: Failed to setup Hypha client:', error);
+    self.postMessage({ 
+        type: 'worker_error', 
+        error: error.message 
+    });
+});
+
+// Handle messages from main thread
+self.onmessage = function(event) {
+    const { type, data } = event.data;
+    
+    switch (type) {
+        case 'ping':
+            self.postMessage({ 
+                type: 'pong', 
+                message: 'Custom worker is operational',
+                timestamp: new Date().toISOString()
+            });
+            break;
+            
+        case 'shutdown':
+            console.log('🛑 Custom Worker: Shutdown requested');
+            self.postMessage({ type: 'shutdown_acknowledged' });
+            self.close();
+            break;
+            
+        default:
+            console.warn('⚠️ Custom Worker: Unknown message type:', type);
+    }
+};
+
+// Error handling
+self.onerror = function(error) {
+    console.error('💥 Custom Worker: Unhandled error:', error);
+    self.postMessage({ 
+        type: 'worker_error', 
+        error: error.message 
+    });
+};
+
+console.log('🚀 Custom Worker: Initialization complete');
 ```
 
-**Loading and Using the Worker:**
+#### Loading and Using Custom Workers
 
 ```javascript
-// Load the worker
-const worker = await api.loadApp({
-    src: "/path/to/my-worker.js",
-    type: "web-worker"
+// Load the custom computational worker
+const computeWorker = await api.loadApp({
+    type: 'web-worker',
+    src: '/workers/computational-worker.js',
+    name: 'Computational Worker',
+    description: 'High-performance mathematical computations'
 });
 
-// Use worker services
-const computationResult = await worker.heavyComputation([1, 2, 3, 4, 5]);
-console.log("Computation result:", computationResult);
+console.log('Worker loaded:', computeWorker.id);
 
-const backgroundTask = await worker.processInBackground({
-    name: "data-processing",
-    delay: 2000
-});
-console.log("Background task result:", backgroundTask);
+// Use computational services
+const fibResult = await computeWorker.fibonacci(20);
+console.log('Fibonacci(20):', fibResult);  // 6765
+
+const factResult = await computeWorker.factorial(5);
+console.log('Factorial(5):', factResult);  // 120
+
+const primeCheck = await computeWorker.isPrime(97);
+console.log('Is 97 prime?:', primeCheck);  // true
+
+const arraySum = await computeWorker.processArray([1, 2, 3, 4, 5], 'sum');
+console.log('Array sum:', arraySum);  // 15
+
+// Heavy computation in background
+const heavyResult = await computeWorker.heavyComputation(500000);
+console.log('Heavy computation result:', heavyResult);
+// { result: 1234.567, iterations: 500000, duration: 89, performance: "5617 ops/ms" }
+
+// Get worker capabilities
+const workerInfo = await computeWorker.getWorkerInfo();
+console.log('Worker info:', workerInfo);
 ```
+
+#### Key Features of Custom Worker Scripts
+
+**✅ **Direct Script Loading****
+- Support for HTTP/HTTPS URLs, blob URLs, and file URLs
+- Bypasses ImJoy plugin parsing for faster loading
+- Full control over worker implementation
+
+**✅ **Full Hypha RPC Integration****
+- Complete access to Hypha RPC WebSocket client
+- Service registration with `api.export()`
+- Context-aware service calls with workspace isolation
+
+**✅ **Performance Optimized****
+- Dedicated worker threads for CPU-intensive tasks
+- Non-blocking main thread execution
+- Efficient memory management
+
+**✅ **Production Ready****
+- Error handling and graceful degradation
+- Worker lifecycle management
+- Comprehensive logging and debugging
+
+#### Custom vs Traditional Workers
+
+| Feature | Custom Worker Scripts | Traditional ImJoy Plugins |
+|---------|----------------------|---------------------------|
+| **Loading** | Direct URL loading | Plugin code parsing required |
+| **Performance** | Faster initialization | Additional parsing overhead |
+| **Flexibility** | Full control over implementation | ImJoy plugin format constraints |
+| **Integration** | Full Hypha RPC access | Full Hypha RPC access |
+| **Use Cases** | Custom algorithms, existing workers | ImJoy ecosystem plugins |
+
+#### Complete Working Example
+
+See [`public/test-worker.js`](./public/test-worker.js) for a complete example featuring:
+
+- ✅ Full Hypha RPC WebSocket integration
+- ✅ Mathematical computation services (fibonacci, factorial, prime checking)
+- ✅ Array processing operations with multiple algorithms
+- ✅ Performance benchmarking capabilities
+- ✅ Matrix operations and text processing
+- ✅ Worker status monitoring and error handling
+- ✅ Production-ready architecture patterns
+
+This example demonstrates how to create sophisticated custom workers that integrate seamlessly with the Hypha Core ecosystem while providing high-performance computational capabilities.
 
 ### Key Points for Integration
 
@@ -1926,6 +2161,37 @@ After calling `hyphaCore.start()`, you get an API client with these methods:
 - `getService(name)` - Get reference to registered service (async)
 - `listServices()` - List all available services (async)
 - `generateToken(config)` - Generate JWT token for authentication (async)
+
+#### loadApp Method
+
+```javascript
+// Traditional ImJoy plugin loading
+const plugin = await api.loadApp({
+    src: "https://example.com/my-plugin.imjoy.html"
+});
+
+// Custom web worker script loading (NEW!)
+const customWorker = await api.loadApp({
+    type: 'web-worker',                    // Required for custom workers
+    src: 'https://example.com/worker.js',  // Direct script URL
+    name: 'Custom Worker',                 // Optional display name
+    description: 'Custom worker description'  // Optional description
+});
+
+// Supported URL types for custom workers:
+// - HTTP/HTTPS: 'https://cdn.example.com/worker.js'
+// - Blob URLs: URL.createObjectURL(blob)
+// - File URLs: '/static/workers/my-worker.js'
+```
+
+**loadApp Parameters:**
+- `src` - Plugin URL or custom script URL (required)
+- `type` - For custom workers, must be `'web-worker'` (optional for ImJoy plugins)
+- `name` - Display name for the loaded app (optional)
+- `description` - App description (optional)
+- `config` - Additional configuration passed to the app (optional)
+
+**Returns:** Promise<ServiceAPI> - Service API object with exported methods
 
 #### generateToken Method
 
