@@ -291,16 +291,22 @@ export class Workspace {
         } else {
             // Default service created by api.export({}), typically used for hypha apps
             if (key.includes(":default@")) {
-                try {
-                    if (this._rpc) {
-                        const svc = await this._rpc.get_remote_service(`${clientId}:default`);
-                        if (svc.setup) {
-                            await svc.setup();
+                // Check if this is a local service first
+                if (isLocalService && service.setup) {
+                    // For local services, call setup directly without RPC
+                    setTimeout(async () => {
+                        try {
+                            await service.setup();
+                            console.debug(`✅ Local setup completed for service \`${clientId}\``);
+                        } catch (e) {
+                            console.error(`Failed to run setup for local default service \`${clientId}\`: ${e}`);
                         }
-                    }
-                } catch (e) {
-                    console.error(`Failed to run setup for default service \`${clientId}\`: ${e}`);
+                    }, 10);
+                } else if (!isLocalService && this._shouldAttemptRpcSetup(clientId, service)) {
+                    // Only try RPC setup for services that likely have remote setup methods
+                    this._setupServiceWithRetry(clientId, 3); // 3 retry attempts
                 }
+                // For local services without setup method, or services that don't need RPC setup, no action needed
             }
             if (key.includes(":built-in@")) {
                 this.eventBus.emit("client_connected", { id: clientId, workspace: ws });
@@ -313,6 +319,29 @@ export class Workspace {
         
         // Return the service object with the processed ID and configuration
         return service;
+    }
+
+    /**
+     * Determine if we should attempt RPC setup for a service
+     */
+    _shouldAttemptRpcSetup(clientId, service) {
+        // Skip RPC setup for web-worker and web-python plugins - they register services
+        // but typically don't expose setup() methods via RPC
+        const clientPart = clientId.includes('/') ? clientId.split('/')[1] : clientId;
+        
+        // Web-worker and web-python clients typically have client IDs that start with "client-"
+        // and don't need RPC setup calls
+        if (clientPart.startsWith('client-')) {
+            return false;
+        }
+        
+        // Skip if the service explicitly indicates it doesn't need setup
+        if (service.config && service.config.no_setup) {
+            return false;
+        }
+        
+        // For iframe-based apps and other traditional RPC services, attempt setup
+        return true;
     }
 
     /**
@@ -329,6 +358,10 @@ export class Workspace {
                 return true;
             }
             if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                // Don't check _rintf objects as they're RPC proxies
+                if (value._rintf) {
+                    continue;
+                }
                 for (const subValue of Object.values(value)) {
                     if (typeof subValue === 'function') {
                         return true;
@@ -337,6 +370,41 @@ export class Workspace {
             }
         }
         return false;
+    }
+
+    /**
+     * Setup service with retry mechanism to handle timing issues
+     */
+    async _setupServiceWithRetry(clientId, maxRetries = 3) {
+        const clientPart = clientId.includes('/') ? clientId.split('/')[1] : clientId;
+        
+        // Run this in the background to avoid blocking
+        setTimeout(async () => {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    // Exponential backoff: 100ms, 400ms, 1600ms
+                    const delay = 100 * Math.pow(4, attempt - 1);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    
+                    if (this._rpc) {
+                        const svc = await this._rpc.get_remote_service(`${clientPart}:default`, 5); // 5 second timeout
+                        if (svc && svc.setup) {
+                            await svc.setup();
+                            console.debug(`✅ Setup completed for default service \`${clientId}\``);
+                            return; // Success, exit retry loop
+                        }
+                    }
+                } catch (e) {
+                    if (attempt === maxRetries) {
+                        // Only show this as debug since it's often expected for local services
+                        console.debug(`Setup not available for default service \`${clientId}\` (this is normal for local services)`);
+                    } else {
+                        // Don't log individual retry attempts to reduce noise
+                        continue;
+                    }
+                }
+            }
+        }, 50); // Start after 50ms delay
     }
     
     async unregisterService(serviceId, context) {
@@ -703,19 +771,39 @@ export class Workspace {
         this.connections[ws + "/" + clientId] = {
             id: ws + "/" + clientId,
             workspace: ws,
+            user: context.user,  // Store user info for nested app creation
             websocket: null,
             postMessage: (data) => {
                 Environment.safePostMessage(elem.contentWindow, data);
             },
         };
 
+        // Generate authentication token if not provided
+        let authToken = context.token;
+        if (!authToken) {
+            try {
+                // Generate a token for the iframe to authenticate with
+                authToken = await this.getDefaultService().generate_token({
+                    workspace: ws,
+                    client_id: clientId,
+                    user_id: context.user?.id || "anonymous",
+                    email: context.user?.email || "",
+                    roles: context.user?.roles || [],
+                    scopes: context.user?.scopes || [],
+                    expires_in: 3600 // 1 hour
+                }, context);
+            } catch (error) {
+                console.warn("Failed to generate auth token for iframe:", error);
+            }
+        }
+
         // Prepare authentication parameters for URL hash
         const authParams = new URLSearchParams();
         authParams.set('client_id', clientId);
         authParams.set('workspace', ws);
         authParams.set('server_url', this.serverUrl);
-        if (context.token) {
-            authParams.set('token', context.token);
+        if (authToken) {
+            authParams.set('token', authToken);
         }
         if (context.user) {
             authParams.set('user_info', JSON.stringify(context.user));
@@ -797,15 +885,12 @@ export class Workspace {
             server_url: this.serverUrl,
             client_id: clientId,
             workspace: ws,
-            token: context.token || null,
+            token: authToken || null,
             user_info: context.user || null,
             config,
         });
 
         const svc = await waitClientPromise;
-        if (svc.setup) {
-            await svc.setup();
-        }
         if (svc.run && config) {
             await svc.run({ data: config.data, config: config.config });
         }
@@ -879,14 +964,34 @@ export class Workspace {
             throw new Error('WebWorker creation requires browser environment with Worker API');
         }
         
+        const clientId = "client-" + Date.now();
+        
+        // Generate authentication token if not provided
+        let authToken = context.token;
+        if (!authToken) {
+            try {
+                // Generate a token for the worker to authenticate with
+                authToken = await this.getDefaultService().generate_token({
+                    workspace: workspace,
+                    client_id: clientId,
+                    user_id: context.user?.id || "anonymous",
+                    email: context.user?.email || "",
+                    roles: context.user?.roles || [],
+                    scopes: context.user?.scopes || [],
+                    expires_in: 3600 // 1 hour
+                }, context);
+            } catch (error) {
+                console.warn("Failed to generate auth token for worker:", error);
+            }
+        }
+        
         // Prepare authentication parameters for URL hash
         const authParams = new URLSearchParams();
-        const clientId = "client-" + Date.now();
         authParams.set('client_id', clientId);
         authParams.set('workspace', workspace);
         authParams.set('server_url', this.serverUrl);
-        if (context.token) {
-            authParams.set('token', context.token);
+        if (authToken) {
+            authParams.set('token', authToken);
         }
         if (context.user) {
             authParams.set('user_info', JSON.stringify(context.user));
@@ -898,6 +1003,7 @@ export class Workspace {
             id: workspace + "/" + clientId,
             source: worker,
             workspace: workspace,
+            user: context.user,  // Store user info for nested app creation
             websocket: null,
             postMessage: (data) => {
                 worker.postMessage(data);
@@ -910,7 +1016,7 @@ export class Workspace {
             server_url: this.serverUrl,
             workspace: workspace,
             client_id: clientId,
-            token: context?.token || null,
+            token: authToken || null,
             user_info: context?.user || null,
             config,
         });
@@ -970,7 +1076,9 @@ export class Workspace {
                 return prompt(msg, default_value);
             },
             "show_progress": (progress, context) => {
-                console.log("showProgress", progress);
+                if (progress !== 0 && progress !== 100) {
+                    console.debug("showProgress", progress);
+                }
             },
             "show_message": (msg, context) => {
                 console.log(msg);

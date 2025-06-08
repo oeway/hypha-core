@@ -202,8 +202,20 @@ class HyphaCore extends MessageEmitter {
             const camelKey = toCamelCase(key);
             if (typeof defaultService[key] === "function") {
                 coreInterface[camelKey] = async (...args) => {
-                    // add more info to the last argument
-                    return await defaultService[key](...args, {ws: this.connections[cid].workspace,  from: `${cid}`, to: `${this.connections[cid].workspace}/${this.workspaceManagerId}` });
+                    // Create context with user information from the connection
+                    const context = {
+                        ws: this.connections[cid].workspace,
+                        from: `${cid}`,
+                        to: `${this.connections[cid].workspace}/${this.workspaceManagerId}`,
+                        user: this.connections[cid].user || {
+                            id: "anonymous",
+                            is_anonymous: true,
+                            email: "anonymous@imjoy.io",
+                            roles: [],
+                            scopes: []
+                        }
+                    };
+                    return await defaultService[key](...args, context);
                 }
             }
             else {
@@ -397,13 +409,9 @@ class HyphaCore extends MessageEmitter {
                 return;
             }
 
-            // Check for legacy imjoy-rpc clients (those passing auth via URL parameters)
-            // Allow legacy clients for "default" workspace to support imjoy apps
+            // All clients must provide authentication information
             if (authConfig.workspace === undefined && authConfig.client_id === undefined && authConfig.token === undefined) {
-                // For legacy clients, assume they want to connect to "default" workspace
-                console.warn("Accepting legacy imjoy-rpc client for default workspace");
-                authConfig.workspace = "default";
-                authConfig.client_id = "client-" + randId();
+                throw new Error("Authentication required: workspace, client_id, or token must be provided");
             }
 
             // Authenticate user
@@ -435,19 +443,6 @@ class HyphaCore extends MessageEmitter {
     async _authenticateUser(authConfig) {
         let userInfo;
         let workspace = authConfig.workspace;
-
-        // Special case: "default" workspace allows anonymous access without any authentication
-        if (workspace === "default") {
-            const anonymousUserId = "anonymous-" + randId();
-            userInfo = { 
-                id: anonymousUserId, 
-                is_anonymous: true, 
-                email: "anonymous@imjoy.io",
-                roles: [],
-                scopes: []
-            };
-            return { userInfo, workspace: "default" };
-        }
 
         if (authConfig.token) {
             try {
@@ -520,8 +515,8 @@ class HyphaCore extends MessageEmitter {
             if (!requestedWorkspace) {
                 workspace = anonymousUserId; // Use user ID as workspace for isolation
             } else {
-                // For security: anonymous clients can only access default/public workspaces or their own workspace
-                if (requestedWorkspace !== "default" && requestedWorkspace !== "public" && requestedWorkspace !== anonymousUserId) {
+                // For security: anonymous clients can only access public workspaces or their own workspace
+                if (requestedWorkspace !== "public" && requestedWorkspace !== anonymousUserId) {
                     throw new Error(`Anonymous client attempted to access protected workspace: ${requestedWorkspace}`);
                 }
                 workspace = requestedWorkspace;
@@ -532,11 +527,6 @@ class HyphaCore extends MessageEmitter {
     }
 
     async _checkClientPermissions(clientId, workspace, userInfo) {
-        // Special case: "default" workspace allows unrestricted access
-        if (workspace === "default") {
-            return;
-        }
-        
         // Basic permission check - in full implementation would be more comprehensive
         if (workspace === "public") {
             // Public workspaces are generally accessible
