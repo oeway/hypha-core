@@ -459,7 +459,7 @@ export class Workspace {
         query.app_id = query.app_id || appId;
         query.service_id = serviceId.split("/")[1].split(":")[1];
     
-        console.info("Getting service:", query);
+        // console.info("Getting service:", query);
     
         const originalVisibility = query.visibility || "*";
         let visibility;
@@ -481,7 +481,7 @@ export class Workspace {
             throw new Error("Query pattern contains invalid characters.");
         }
     
-        console.debug("Query services using pattern:", pattern);
+        // console.debug("Query services using pattern:", pattern);
         const keys = this._redis.keys(pattern);
     
         if (query.workspace === "*") {
@@ -522,7 +522,7 @@ export class Workspace {
                 // First check if this is a local service
                 const localServiceKey = `${serviceId}@${appId}`;
                 if (this._localServices.has(localServiceKey)) {
-                    console.info(`Found local service: ${localServiceKey}`);
+                    // console.info(`Found local service: ${localServiceKey}`);
                     const localService = this._localServices.get(localServiceKey);
                     return this.patchServiceConfig(workspace, localService);
                 }
