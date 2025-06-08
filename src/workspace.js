@@ -1,4 +1,4 @@
-import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert, Environment, parsePluginCode } from './utils/index.js';
+import { RedisRPCConnection, Environment, parsePluginCode } from './utils/index.js';
 import { hyphaWebsocketClient } from 'hypha-rpc';
 
 // Ensure the client_id is safe
@@ -124,6 +124,7 @@ export class Workspace {
             const handler = (info) => {
                 const ccid = info.id.split(":")[0];
                 if(ccid !== cid){
+                    console.log(`🚫 [DEBUG] ccid mismatch, ignoring service: ${info.id}`);
                     return;
                 }
                 this.eventBus.off("service_added", handler);
@@ -133,10 +134,10 @@ export class Workspace {
                     return;
                 } else {
                     if(!info.id.endsWith(":default")){
-                        logger.error("Unexpected service added:", info);
+                        console.error(`❌ [DEBUG] Unexpected service added (not :default):`, info);
                         return;
                     }
-                    const defaultService = info
+                    const defaultService = info;
                     clearTimeout(timeoutId);
                     this._rpc.get_remote_service(defaultService.id).then(async (svc) => {
                         try {
@@ -145,10 +146,13 @@ export class Workspace {
                         } catch (e) {
                             reject(e);
                         }
+                    }).catch(error => {
+                        console.error(`❌ [DEBUG] Failed to get remote service:`, error);
+                        reject(error);
                     });
-                
                 }
-            }
+            };
+            
             let timeoutId = setTimeout(() => {
                 this.eventBus.off("service_added", handler);
                 reject(new Error(`Timeout after ${timeout / 1000} s`));
@@ -768,8 +772,10 @@ export class Workspace {
         let elem;
         const ws = context.ws;
         const clientId = "client-" + Date.now();
-        this.connections[ws + "/" + clientId] = {
-            id: ws + "/" + clientId,
+        const connectionId = ws + "/" + clientId;
+        
+        this.connections[connectionId] = {
+            id: connectionId,
             workspace: ws,
             user: context.user,  // Store user info for nested app creation
             websocket: null,
@@ -863,11 +869,12 @@ export class Workspace {
             elem.appendChild(iframe);
             elem = iframe;
         }
-        this.connections[ws + "/" + clientId].source = elem.contentWindow;
+        this.connections[connectionId].source = elem.contentWindow;
+        
         let waitClientPromise;
 
         if (!config.passive) {
-            waitClientPromise = this.waitForClient(ws + "/" + clientId, 180000);
+            waitClientPromise = this.waitForClient(connectionId, 180000);
         }
 
         await new Promise((resolve, reject) => {
@@ -876,11 +883,12 @@ export class Workspace {
         });
 
         if (config.passive) {
-            delete this.connections[ws + "/" + clientId];
+            delete this.connections[connectionId];
             return;
         }
 
-        Environment.safePostMessage(elem.contentWindow, {
+        
+        const initMessage = {
             type: "initializeHyphaClient",
             server_url: this.serverUrl,
             client_id: clientId,
@@ -888,12 +896,40 @@ export class Workspace {
             token: authToken || null,
             user_info: context.user || null,
             config,
-        });
+        };
+        // Important: this setTimeout is necessary, otherwise, the iframe won't be able to receive the message
+        // Add a small delay to ensure the iframe's JavaScript has loaded and setupLocalClient() 
+        // has had time to set up its message listener
+        setTimeout(() => {
+            try {
+                Environment.safePostMessage(elem.contentWindow, initMessage);
+            } catch (error) {
+                console.error(`❌ [DEBUG] Failed to send initializeHyphaClient to ${connectionId}:`, error);
+            }
+        }, 0);
 
         const svc = await waitClientPromise;
-        if (svc.run && config) {
-            await svc.run({ data: config.data, config: config.config });
+        
+        // Automatically call setup() if it exists for ImJoy plugins
+        if (svc.setup && typeof svc.setup === 'function') {
+            try {
+                await svc.setup();
+                // Mark that setup has been called automatically to avoid duplicate calls
+                svc._hyphaSetupCalled = true;
+            } catch (error) {
+                console.error(`❌ [DEBUG] setup() failed for window plugin: ${config.name || config.src}:`, error);
+            }
         }
+        
+        // Automatically call run() for window/iframe plugins
+        if (svc.run && typeof svc.run === 'function') {
+            try {
+                await svc.run({ data: config.data, config: config.config });
+            } catch (error) {
+                console.error(`❌ [DEBUG] run() failed for window plugin: ${config.name || config.src}:`, error);
+            }
+        }
+        
         this.windows.push({ id: config.window_id, name: config.name || config.src, service: svc });
         return svc;
     }
@@ -1020,12 +1056,34 @@ export class Workspace {
             user_info: context?.user || null,
             config,
         });
-        return await this.waitForClient(workspace + "/" + clientId, 60000);
+        const svc = await this.waitForClient(workspace + "/" + clientId, 60000);
+        
+        // Automatically call setup() if it exists for ImJoy plugins
+        if (svc.setup && typeof svc.setup === 'function') {
+            try {
+                await svc.setup();
+                // Mark that setup has been called automatically to avoid duplicate calls
+                svc._hyphaSetupCalled = true;
+            } catch (error) {
+                console.error(`❌ [DEBUG] setup() failed for ${config.type} plugin: ${config.name || 'unnamed'}:`, error);
+            }
+        }
+        
+        // For window type plugins created via web-worker, also call run()
+        if (config.type === 'window' && svc.run && typeof svc.run === 'function') {
+            try {
+                await svc.run({ data: config.data, config: config.config });
+            } catch (error) {
+                console.error(`❌ [DEBUG] run() failed for window worker plugin: ${config.name || 'unnamed'}:`, error);
+            }
+        }
+        
+        return svc;
     }
 
     async getApp(config, extra_config, context) {
         if (typeof config === "string") {
-            return await this.loadApp({ src: config }, {}, context);
+            return await this.loadApp({ src: config }, extra_config, context);
         } else if (config.id) {
             return this.plugins[config.id];
         } else if (config.name) {
@@ -1097,22 +1155,6 @@ export class Workspace {
             },
             "critical": (msg, context) => {
                 console.error(msg);
-            },
-            "register_service": async (service, context) => {
-                const workspaceId = context.ws;
-                // make sure service["id"] does not contain ":" or "/"
-                if (service["id"].includes(":")) {
-                    throw new Error("Service id must not contain ':'");
-                } else if (service["id"].includes("/")) {
-                    throw new Error("Service id must not contain '/'");
-                }
-                const sv = await this._rpc.get_remote_service(context["from"] + ":built-in");
-                service["config"] = service["config"] || {};
-                service["config"]["workspace"] = workspaceId;
-                service = await sv.register_service(service);
-                assert(!service["id"].includes("/"), "Service id must not contain '/'");
-                service["id"] = workspaceId + "/" + service["id"];
-                return service;
             },
             "get_service": this.getService.bind(this),
             "getService": this.getService.bind(this),  // camelCase alias

@@ -300,13 +300,23 @@ class HyphaCore extends MessageEmitter {
 
     _handleClientMessage(event) {
         if(event.data && event.data.type === "hyphaClientReady"){
-            // fix the following code to find an connection
+            // For iframe windows: use event.source
+            // For web workers: event.source is null, use event.currentTarget
+            const sourceToMatch = event.source || event.currentTarget;
+            let found = false;
             for(const key in this.connections){
-                if(this.connections[key].source === event.currentTarget){
-                    const conn = this.connections[key];
-                    this.emit("connection_ready", conn)
+                const conn = this.connections[key];
+                
+                if(conn.source === sourceToMatch){
+                    console.log(`✅ [DEBUG] Found matching connection: ${key}`);
+                    this.emit("connection_ready", conn);
+                    found = true;
                     break;
                 }
+            }
+            
+            if (!found) {
+                console.error("❌ [DEBUG] No matching connection found for hyphaClientReady message!");
             }
         }
         const workspace = event.data.workspace;

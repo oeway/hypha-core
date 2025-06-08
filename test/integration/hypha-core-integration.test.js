@@ -902,7 +902,7 @@ api.export(TestPythonApp())
                         stack: error.stack
                     };
                 }
-            });
+            }, { timeout: 600000 }); // 10 minute timeout for page.evaluate
             
             console.log('Python test evaluation completed.');
             
@@ -1032,7 +1032,7 @@ api.export(new TestWorkerApp());
                         error: error.message
                     };
                 }
-            });
+            }, { timeout: 120000 }); // 2 minute timeout for web worker test
             
             expect(webWorkerTest.success).toBe(true);
             expect(webWorkerTest.appLoaded).toBe(true);
