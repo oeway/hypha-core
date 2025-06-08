@@ -949,6 +949,12 @@ export class Workspace {
         let code;
         const ws = context.ws;
         const src = config.src;
+        
+        // If type is already specified as web-worker and src is a URL, use it directly as the worker script
+        if (config.type === "web-worker" && src && (src.startsWith("http") || src.startsWith("blob:"))) {
+            return await this.createWorker(config, ws, src, context);
+        }
+        
         if (src.startsWith("http") && !src.split("?")[0].endsWith(".imjoy.html")) {
             return await this.createWindow(config, extra_config, context);
         }

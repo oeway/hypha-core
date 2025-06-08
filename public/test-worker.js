@@ -191,16 +191,55 @@ hyphaWebsocketClient.setupLocalClient({
             let result;
             switch (testName) {
                 case 'fibonacci':
-                    result = this.fibonacci(parameter);
+                    // Call the functions directly by name instead of using this
+                    if (parameter <= 1) {
+                        result = parameter;
+                    } else {
+                        let a = 0, b = 1;
+                        for (let i = 2; i <= parameter; i++) {
+                            [a, b] = [b, a + b];
+                        }
+                        result = b;
+                    }
                     break;
                 case 'factorial':
-                    result = this.factorial(parameter);
+                    if (parameter <= 1) {
+                        result = 1;
+                    } else {
+                        result = 1;
+                        for (let i = 2; i <= parameter; i++) {
+                            result *= i;
+                        }
+                    }
                     break;
                 case 'isPrime':
-                    result = this.isPrime(parameter);
+                    if (parameter <= 1) {
+                        result = false;
+                    } else if (parameter <= 3) {
+                        result = true;
+                    } else if (parameter % 2 === 0 || parameter % 3 === 0) {
+                        result = false;
+                    } else {
+                        result = true;
+                        for (let i = 5; i * i <= parameter; i += 6) {
+                            if (parameter % i === 0 || parameter % (i + 2) === 0) {
+                                result = false;
+                                break;
+                            }
+                        }
+                    }
                     break;
                 case 'heavyComputation':
-                    result = this.heavyComputation(parameter);
+                    let computation = 0;
+                    for (let i = 0; i < parameter; i++) {
+                        computation += Math.sin(i) * Math.cos(i) * Math.tan(i / 1000);
+                    }
+                    result = {
+                        result: computation,
+                        iterations: parameter,
+                        duration: 0, // Will be set below
+                        performance: ''  // Will be set below
+                    };
                     break;
                 default:
                     throw new Error(`Unknown benchmark test: ${testName}`);
@@ -208,6 +247,12 @@ hyphaWebsocketClient.setupLocalClient({
             
             const endTime = performance.now();
             const duration = endTime - startTime;
+            
+            // Update duration for heavyComputation result
+            if (testName === 'heavyComputation' && typeof result === 'object') {
+                result.duration = duration;
+                result.performance = `${parameter / duration} ops/ms`;
+            }
             
             return {
                 test: testName,

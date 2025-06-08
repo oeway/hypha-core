@@ -114,6 +114,7 @@
             <button onclick="runSpecificTest('services')">⚡ Services</button>
             <button onclick="runSpecificTest('security')">🔒 Security</button>
             <button onclick="runSpecificTest('standalone')">📱 Standalone App</button>
+            <button onclick="runSpecificTest('webworker')">⚙️ Custom Web Worker</button>
         </div>
 
         <div class="test-section">
@@ -124,6 +125,7 @@
                 <div>3. Service Registration & Communication <span id="status-services" class="status pending">PENDING</span></div>
                 <div>4. Cross-Workspace Security <span id="status-security" class="status pending">PENDING</span></div>
                 <div>5. Standalone App Integration <span id="status-standalone" class="status pending">PENDING</span></div>
+                <div>6. Custom Web Worker Script <span id="status-webworker" class="status pending">PENDING</span></div>
             </div>
         </div>
 
@@ -857,6 +859,136 @@
             }
         }
 
+        // Test 6: Custom Web Worker Script
+        async function testCustomWebWorker() {
+            log('⚙️ Starting Custom Web Worker Script Test...');
+            updateStatus('webworker', 'pending');
+
+            try {
+                if (!rootApi) {
+                    throw new Error('Root API not available - run basic setup first');
+                }
+
+                // Step 1: Use the existing test-worker.js file
+                log('Step 1: Using existing test-worker.js for custom worker test...');
+                
+                const testWorkerBaseUrl = window.location.origin;
+                const workerUrl = `${testWorkerBaseUrl}/test-worker.js`;
+                
+                log(`✓ Using test worker at: ${workerUrl}`);
+
+                // Step 2: Load the custom web worker using loadApp
+                log('Step 2: Loading custom web worker via loadApp...');
+                
+                const workerApp = await rootApi.loadApp({
+                    type: 'web-worker',
+                    src: workerUrl,
+                    name: 'Test Worker with Computational Services',
+                    description: 'Custom web worker with full Hypha RPC integration'
+                });
+                
+                log('✓ Custom web worker loaded successfully');
+                log(`✓ Worker app service ID: ${workerApp.id}`);
+
+                // Step 3: Test computational services
+                log('Step 3: Testing computational services...');
+                
+                // Test fibonacci calculation
+                const fibResult = await workerApp.fibonacci(10);
+                log(`✓ Fibonacci(10) = ${fibResult}`);
+                if (fibResult !== 55) {
+                    throw new Error(`Expected fibonacci(10) = 55, got ${fibResult}`);
+                }
+                
+                // Test factorial calculation
+                const factResult = await workerApp.factorial(5);
+                log(`✓ Factorial(5) = ${factResult}`);
+                if (factResult !== 120) {
+                    throw new Error(`Expected factorial(5) = 120, got ${factResult}`);
+                }
+                
+                // Test prime checking
+                const primeResult = await workerApp.isPrime(17);
+                log(`✓ isPrime(17) = ${primeResult}`);
+                if (primeResult !== true) {
+                    throw new Error(`Expected isPrime(17) = true, got ${primeResult}`);
+                }
+                
+                // Test array processing
+                const arrayResult = await workerApp.processArray([1, 2, 3, 4, 5], 'sum');
+                log(`✓ processArray([1,2,3,4,5], 'sum') = ${arrayResult}`);
+                if (arrayResult !== 15) {
+                    throw new Error(`Expected array sum = 15, got ${arrayResult}`);
+                }
+                
+                // Test worker info
+                const workerInfo = await workerApp.getWorkerInfo();
+                log(`✓ Worker info: ${workerInfo.type}, capabilities: ${workerInfo.capabilities?.length || 0} functions`);
+                
+                log('✓ All computational service tests passed!');
+
+                // Step 4: Test error handling - try invalid worker URL
+                log('Step 4: Testing error handling with invalid worker URL...');
+                
+                try {
+                    await rootApi.loadApp({
+                        type: 'web-worker',
+                        src: 'https://nonexistent-domain.invalid/worker.js',
+                        name: 'Invalid Worker Test'
+                    });
+                    throw new Error('Expected error for invalid worker URL');
+                } catch (expectedError) {
+                    if (expectedError.message.includes('Expected error')) {
+                        throw expectedError; // Re-throw our own error
+                    }
+                    log('✓ Invalid worker URL properly handled');
+                }
+
+                // Step 4: Test service listing to verify worker services are registered
+                log('Step 4: Verifying worker services are registered...');
+                
+                const allServices = await rootApi.listServices();
+                const workerServices = allServices.filter(s => s.id && s.id.includes('computational-services'));
+                
+                if (workerServices.length > 0) {
+                    log(`✓ Found ${workerServices.length} computational services registered by worker`);
+                    for (const service of workerServices) {
+                        log(`  - ${service.name}: ${service.description}`);
+                    }
+                } else {
+                    log('⚠️ No computational services found (worker may not have fully registered yet)');
+                }
+
+                // Step 5: Test performance benchmark
+                log('Step 5: Testing worker performance benchmark...');
+                
+                try {
+                    const benchmarkResult = await workerApp.benchmark('fibonacci', 20);
+                    log(`✓ Fibonacci benchmark: ${benchmarkResult.duration.toFixed(2)}ms for fibonacci(${benchmarkResult.parameter})`);
+                } catch (benchError) {
+                    log(`⚠️ Benchmark test failed: ${benchError.message}`);
+                }
+
+                // Step 6: Test worker cleanup and status
+                log('Step 6: Testing worker status and capabilities...');
+                
+                const finalWorkerInfo = await workerApp.getWorkerInfo();
+                log(`✓ Final worker status - Type: ${finalWorkerInfo.type}, Capabilities: ${finalWorkerInfo.capabilities.length} functions`);
+                log(`✓ Custom web worker test completed successfully using real Hypha RPC integration`);
+
+                updateStatus('webworker', 'success');
+                addResult('Custom Web Worker Script', true);
+                log('🎉 Custom web worker script test completed successfully!', 'success');
+                return true;
+
+            } catch (error) {
+                log(`❌ Custom web worker test failed: ${error.message}`, 'error');
+                updateStatus('webworker', 'error');
+                addResult('Custom Web Worker Script', false, error.message);
+                return false;
+            }
+        }
+
         // Main test orchestration
         async function runAllTests() {
             log('🚀 Starting Comprehensive Integration Tests...');
@@ -871,7 +1003,8 @@
                 { name: 'Authentication', fn: testAuthentication },
                 { name: 'Services', fn: testServices },
                 { name: 'Security', fn: testSecurity },
-                { name: 'Standalone App', fn: testStandaloneApp }
+                { name: 'Standalone App', fn: testStandaloneApp },
+                { name: 'Custom Web Worker', fn: testCustomWebWorker }
             ];
 
             let passed = 0;
@@ -911,7 +1044,8 @@
                 auth: testAuthentication,
                 services: testServices,
                 security: testSecurity,
-                standalone: testStandaloneApp
+                standalone: testStandaloneApp,
+                webworker: testCustomWebWorker
             };
 
             if (tests[testType]) {
@@ -927,7 +1061,7 @@
             document.getElementById('error-results').innerHTML = '';
             
             // Reset all status indicators
-            const statuses = ['basic', 'auth', 'services', 'security', 'standalone'];
+            const statuses = ['basic', 'auth', 'services', 'security', 'standalone', 'webworker'];
             statuses.forEach(status => updateStatus(status, 'pending'));
             
             // Close any test windows
