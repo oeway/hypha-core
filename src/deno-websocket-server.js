@@ -1,10 +1,21 @@
 /**
- * Deno WebSocket Server Wrapper
+ * Deno WebSocket Server Wrapper with HyphaCore Integration
  * 
  * This module provides a wrapper around Deno's native HTTP server and WebSocket
  * to mimic the mock-socket Server API, allowing hypha-core to work with real
- * WebSocket connections in Deno. It also provides HTTP service proxy functionality
- * similar to the Python hypha server.
+ * WebSocket connections in Deno. It includes a built-in adapter that makes Deno's 
+ * DOM-style WebSocket API compatible with HyphaCore's Node.js WebSocket expectations.
+ * 
+ * Key Features:
+ * - WebSocket API compatibility layer for HyphaCore integration
+ * - HTTP service proxy functionality similar to Python hypha server
+ * - Redis clustering support for horizontal scalability
+ * - ASGI and function service routing
+ * 
+ * WebSocket Compatibility Fix:
+ * The DenoWebSocketWrapper class bridges the gap between Deno's DOM WebSocket API
+ * and Node.js WebSocket API that HyphaCore expects, handling event emission patterns,
+ * method signatures, and property access correctly.
  */
 
 import { MessageEmitter } from './utils/index.js';
@@ -217,7 +228,7 @@ class RedisClusterManager {
 }
 
 /**
- * WebSocket wrapper that mimics mock-socket WebSocket API
+ * WebSocket wrapper that makes Deno WebSocket API compatible with HyphaCore's Node.js expectations
  */
 class DenoWebSocketWrapper extends MessageEmitter {
     constructor(nativeWebSocket, request) {
@@ -232,11 +243,16 @@ class DenoWebSocketWrapper extends MessageEmitter {
         this.CLOSING = 2;
         this.CLOSED = 3;
         
+        // Additional Node.js WebSocket properties for HyphaCore compatibility
+        this.url = nativeWebSocket.url;
+        this.protocol = nativeWebSocket.protocol;
+        this.extensions = nativeWebSocket.extensions;
+        
         this._setupEventHandlers();
     }
     
     _setupEventHandlers() {
-        // Forward native WebSocket events to our event emitter
+        // Forward native WebSocket events to our event emitter with Node.js-style signatures
         this.nativeWebSocket.onopen = (event) => {
             this.readyState = this.nativeWebSocket.readyState;
             this._fire('open', event);
@@ -250,6 +266,19 @@ class DenoWebSocketWrapper extends MessageEmitter {
                 data = new Uint8Array(data);
             }
             
+            // Debug logging for troubleshooting
+            if (typeof data === 'string') {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.type === 'hello') {
+                        console.debug('🔌 Received WebSocket hello message');
+                    }
+                } catch (e) {
+                    // Not JSON, that's fine
+                }
+            }
+            
+            // HyphaCore expects Node.js-style message events with just the data
             this._fire('message', data);
         };
         
@@ -259,7 +288,8 @@ class DenoWebSocketWrapper extends MessageEmitter {
             if (event.code !== 1000 && event.code !== 1001) {
                 console.debug(`WebSocket closed with code ${event.code}: ${event.reason}`);
             }
-            this._fire('close', event);
+            // HyphaCore expects Node.js-style close events with code and reason
+            this._fire('close', event.code, event.reason);
         };
         
         this.nativeWebSocket.onerror = (event) => {
@@ -271,7 +301,7 @@ class DenoWebSocketWrapper extends MessageEmitter {
             
             // Only log and fire events for significant errors
             console.error('WebSocket error:', event.error || event);
-            this._fire('error', event);
+            this._fire('error', event.error || event);
         };
     }
     
@@ -298,9 +328,43 @@ class DenoWebSocketWrapper extends MessageEmitter {
         }
     }
     
-    // Mock-socket compatible methods - use inherited methods from MessageEmitter
+    // Additional Node.js WebSocket compatibility methods
+    ping(data) {
+        // Deno WebSocket doesn't have native ping support
+        // This is a no-op for compatibility
+        console.debug('WebSocket ping requested (no-op in Deno)');
+    }
+    
+    pong(data) {
+        // Deno WebSocket doesn't have native pong support
+        // This is a no-op for compatibility
+        console.debug('WebSocket pong requested (no-op in Deno)');
+    }
+    
+    terminate() {
+        // Forceful close for Node.js compatibility
+        this.close(1006, 'Connection terminated');
+    }
+    
+    // Additional properties for compatibility
+    get bufferedAmount() {
+        return this.nativeWebSocket.bufferedAmount || 0;
+    }
+    
+    get binaryType() {
+        return this.nativeWebSocket.binaryType || 'arraybuffer';
+    }
+    
+    set binaryType(value) {
+        if (this.nativeWebSocket.binaryType !== undefined) {
+            this.nativeWebSocket.binaryType = value;
+        }
+    }
+    
+    // Mock-socket and Node.js compatible methods - use inherited methods from MessageEmitter
     // on(event, handler) is inherited
     // off(event, handler) is inherited
+    // emit(...args) is available as _fire(...args)
 }
 
 /**
@@ -1292,7 +1356,7 @@ class DenoWebSocketServer extends MessageEmitter {
         try {
             const { socket, response } = Deno.upgradeWebSocket(request);
             
-            // Create our wrapper WebSocket
+            // Create our wrapper WebSocket with HyphaCore compatibility
             const wrappedSocket = new DenoWebSocketWrapper(socket, request);
             
             // Track the client
@@ -1329,8 +1393,33 @@ class DenoWebSocketServer extends MessageEmitter {
                 };
             }
             
-            // Emit connection event (this is what hypha-core listens for)
-            this._fire('connection', wrappedSocket);
+            // Integrate with HyphaCore's WebSocket handler if available
+            if (this._hyphaCore && this._hyphaCore._handleWebsocketConnection) {
+                console.debug('🔗 Using HyphaCore WebSocket handler with Deno adapter');
+                try {
+                    // Extract connection info for HyphaCore
+                    const url = new URL(request.url);
+                    const connectionInfo = {
+                        origin: request.headers.get('origin'),
+                        secure: url.protocol === 'wss:',
+                        req: {
+                            url: request.url,
+                            headers: Object.fromEntries(request.headers.entries()),
+                        }
+                    };
+                    
+                    // Use HyphaCore's WebSocket handler
+                    this._hyphaCore._handleWebsocketConnection(wrappedSocket, connectionInfo);
+                    console.debug('✅ HyphaCore WebSocket handler integrated successfully');
+                } catch (error) {
+                    console.error('❌ HyphaCore WebSocket integration error:', error.message);
+                    // Fallback to default behavior
+                    this._fire('connection', wrappedSocket);
+                }
+            } else {
+                // Emit connection event (fallback for non-HyphaCore usage)
+                this._fire('connection', wrappedSocket);
+            }
             
             return response;
         } catch (error) {
@@ -1464,6 +1553,68 @@ class DenoWebSocketServer extends MessageEmitter {
                 local_clients: this.clients.size
             };
         }
+    }
+    
+    /**
+     * Create a test WebSocket connection for debugging HyphaCore integration
+     */
+    async testWebSocketIntegration(workspace = 'public') {
+        const url = `ws://${this.host}:${this.port}/ws`;
+        console.log(`🧪 Testing WebSocket integration at ${url}`);
+        
+        return new Promise((resolve, reject) => {
+            const ws = new WebSocket(url);
+            let messageReceived = false;
+            
+            const timeout = setTimeout(() => {
+                if (!messageReceived) {
+                    ws.close();
+                    reject(new Error('WebSocket integration test timeout - no response received'));
+                }
+            }, 5000);
+            
+            ws.onopen = () => {
+                console.log('✅ WebSocket test connection opened');
+                const helloMsg = {
+                    type: 'hello',
+                    client_id: 'integration-test',
+                    workspace: workspace
+                };
+                console.log('📤 Sending test hello message:', JSON.stringify(helloMsg));
+                ws.send(JSON.stringify(helloMsg));
+            };
+            
+            ws.onmessage = (event) => {
+                messageReceived = true;
+                clearTimeout(timeout);
+                console.log('📥 Received test response:', event.data);
+                
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('✅ WebSocket integration test successful!');
+                    ws.close();
+                    resolve(data);
+                } catch (e) {
+                    console.log('📥 Non-JSON response received');
+                    ws.close();
+                    resolve({ data: event.data });
+                }
+            };
+            
+            ws.onerror = (error) => {
+                clearTimeout(timeout);
+                console.error('❌ WebSocket test error:', error);
+                ws.close();
+                reject(error);
+            };
+            
+            ws.onclose = (event) => {
+                clearTimeout(timeout);
+                if (!messageReceived) {
+                    console.log('❌ WebSocket test closed without receiving response');
+                }
+            };
+        });
     }
 }
 

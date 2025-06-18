@@ -12,16 +12,14 @@
  */
 
 // Import the main hypha-core functionality from npm
-import { HyphaCore } from 'npm:hypha-core@0.20.56-pre8';
+import { HyphaCore } from 'npm:hypha-core@0.20.56-pre9';
 
 // Import Deno-specific WebSocket server functionality from npm
 import { 
     DenoWebSocketServer, 
-    DenoWebSocketClient, 
-    DenoWebSocketWrapper,
-    HyphaServiceProxy, 
-    RedisClusterManager 
-} from 'npm:hypha-core@0.20.56-pre8/deno-websocket-server';
+    DenoWebSocketClient,
+    HyphaServiceProxy,
+} from 'npm:hypha-core@0.20.56-pre9/deno-websocket-server';
 
 async function main() {
     console.log('🚀 Starting Deno WebSocket Server Example');
