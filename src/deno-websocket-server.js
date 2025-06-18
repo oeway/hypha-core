@@ -1477,4 +1477,4 @@ class DenoWebSocketClient {
     }
 }
 
-export { DenoWebSocketServer, DenoWebSocketClient, HyphaServiceProxy, RedisClusterManager }; 
+export { DenoWebSocketServer, DenoWebSocketClient, DenoWebSocketWrapper, HyphaServiceProxy, RedisClusterManager }; 

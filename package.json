@@ -1,20 +1,38 @@
 {
   "name": "hypha-core",
-  "version": "0.20.56-pre7",
+  "version": "0.20.56-pre8",
   "description": "Hypha Core",
   "scripts": {
     "start": "webpack serve --mode=development",
     "build": "webpack --mode=development",
+    "build:deno": "node scripts/build-deno.js",
+    "build:all": "npm run build && npm run build:deno",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "mocha --require test/setup.js test/unit/**/*.test.js --timeout 10000",
     "test:integration": "playwright test",
     "test:watch": "mocha --require test/setup.js test/unit/**/*.test.js --watch",
     "test:coverage": "c8 npm run test:unit",
     "serve:tests": "node scripts/serve-tests.js",
-    "publish-npm": "npm run build && npm publish --access public"
+    "publish-npm": "npm run build:all && npm publish --access public"
   },
   "main": "index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "deno": "./deno.js",
+      "import": "./index.mjs",
+      "require": "./index.js",
+      "browser": "./index.mjs",
+      "node": "./index.js",
+      "default": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./deno-websocket-server": {
+      "deno": "./dist/deno/deno-websocket-server.js",
+      "import": "./dist/deno/deno-websocket-server.js",
+      "types": "./deno-websocket-server.d.ts"
+    }
+  },
   "author": "Wei Ouyang",
   "license": "MIT",
   "devDependencies": {
