@@ -185,7 +185,6 @@ export class Workspace {
         this._rpc = rpc;
         const defaultServices = this.getDefaultService();
         await rpc.register_service(Object.assign(defaultServices, config.default_service || {}), {notify: false});
-
     }
 
     async registerService(service, context) {

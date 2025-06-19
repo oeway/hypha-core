@@ -14,7 +14,7 @@ async function debugAsgiHang() {
         ServerClass: DenoWebSocketServer,
         name: 'debug-asgi',
         port: 9625,
-        base_url: 'http://localhost:9625'
+        baseUrl: 'http://localhost:9625'
     });
 
     try {

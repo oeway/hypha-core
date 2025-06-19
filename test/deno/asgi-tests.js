@@ -73,7 +73,7 @@ runner.test('HyphaCore can start in Deno environment', async () => {
         name: 'deno-test-server',
         description: 'Test server for Deno environment',
         port: 9610,
-        base_url: 'http://localhost:9610',
+        baseUrl: 'http://localhost:9610',
         ServerClass: DenoWebSocketServer
     });
 
@@ -93,7 +93,7 @@ runner.test('Can register services and access via HTTP API', async () => {
         name: 'deno-api-test',
         description: 'API test server',
         port: 9611,
-        base_url: 'http://localhost:9611'
+        baseUrl: 'http://localhost:9611'
     });
 
     const api = await hyphaCore.start();
@@ -138,7 +138,7 @@ runner.test('ASGI apps work with proper routing', async () => {
         name: 'deno-asgi-test',
         description: 'ASGI routing test',
         port: 9612,
-        base_url: 'http://localhost:9612'
+        baseUrl: 'http://localhost:9612'
     });
 
     const api = await hyphaCore.start();
@@ -234,7 +234,7 @@ runner.test('ASGI streaming responses work correctly', async () => {
         name: 'deno-streaming-test',
         description: 'Streaming test server',
         port: 9613,
-        base_url: 'http://localhost:9613'
+        baseUrl: 'http://localhost:9613'
     });
 
     const api = await hyphaCore.start();
@@ -301,7 +301,7 @@ runner.test('Error handling works correctly for ASGI apps', async () => {
         name: 'deno-error-test',
         description: 'Error handling test',
         port: 9614,
-        base_url: 'http://localhost:9614'
+        baseUrl: 'http://localhost:9614'
     });
 
     const api = await hyphaCore.start();

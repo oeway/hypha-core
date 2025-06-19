@@ -299,7 +299,7 @@ describe('HyphaCore Basic Functionality Tests', () => {
         it('should create HyphaCore instance with custom config', () => {
             const customConfig = {
                 port: 9999,
-                base_url: 'https://custom.com/',
+                baseUrl: 'https://custom.com/',
                 jwtSecret: 'custom-secret'
             };
             
@@ -310,9 +310,9 @@ describe('HyphaCore Basic Functionality Tests', () => {
             expect(core.jwtSecret).to.equal('custom-secret');
         });
 
-        it('should normalize base_url to end with slash', () => {
+        it('should normalize baseUrl to end with slash', () => {
             const core = new HyphaCoreClass({
-                base_url: 'https://example.com'
+                baseUrl: 'https://example.com'
             });
             
             expect(core.baseUrl).to.equal('https://example.com/');
@@ -854,7 +854,7 @@ describe('HyphaCore Basic Functionality Tests', () => {
             };
 
             const core = new HyphaCoreClass({
-                default_service: defaultServices
+                defaultService: defaultServices
             });
 
             expect(core.defaultServices).to.equal(defaultServices);
@@ -969,7 +969,7 @@ describe('HyphaCore Basic Functionality Tests', () => {
             await hyphaCore.workspaceManager.setup({
                 client_id: hyphaCore.workspaceManagerId,
                 method_timeout: 60,
-                default_service: hyphaCore.defaultServices,
+                defaultService: hyphaCore.defaultServices,
             });
             
             // Test that workspace manager was created and has JWT generation
@@ -1052,7 +1052,7 @@ describe('HyphaCore Basic Functionality Tests', () => {
             await hyphaCore.workspaceManager.setup({
                 client_id: hyphaCore.workspaceManagerId,
                 method_timeout: 60,
-                default_service: hyphaCore.defaultServices,
+                defaultService: hyphaCore.defaultServices,
             });
             
             const service = hyphaCore.workspaceManager.getDefaultService();

@@ -103,8 +103,8 @@ async function main(): Promise<void> {
         const hyphaCore = new HyphaCore({
             port: 9527,
             jwtSecret: 'your-secure-jwt-secret-key',
-            base_url: 'http://localhost:9527/',
-            default_service: {
+            baseUrl: 'http://localhost:9527/',
+            defaultService: {
                 // Basic server utilities
                 serverInfo: {
                     getEnvironment: () => ({

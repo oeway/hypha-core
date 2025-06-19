@@ -118,7 +118,7 @@ async function startLocalHyphaServer(port: number): Promise<{ hyphaCore: HyphaCo
         ServerClass: DenoWebSocketServer,
         WebSocketClass: DenoWebSocketClient,
         jwtSecret: "deno-mirror-secret-key",
-        default_service: {
+        defaultService: {
             echo: (message: string, context: any) => {
                 console.log(`📢 Local echo: ${message}`, context ? `from ${context.from}` : '');
                 return `Local Echo: ${message}`;

@@ -17,7 +17,7 @@ async function testAnonymousUserBehavior() {
         const hyphaCore = new HyphaCore({
             port: 9528,
             jwtSecret: 'test-secret',
-            base_url: 'http://localhost:9528/'
+            baseUrl: 'http://localhost:9528/'
         });
 
         // Start server

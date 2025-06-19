@@ -146,7 +146,8 @@ class HyphaCore extends MessageEmitter {
         }
         
         // Use environment-safe base URL detection
-        this.baseUrl = config.base_url || Environment.getSafeBaseUrl();
+        // here we keep config.base_url for backward compatibility
+        this.baseUrl = config.baseUrl || config.base_url || Environment.getSafeBaseUrl();
         if (!this.baseUrl.endsWith("/")) {
             this.baseUrl += "/";
         }
@@ -171,7 +172,8 @@ class HyphaCore extends MessageEmitter {
         this.server = null;
         this.workspaceManagerId = "workspace-manager";
         this.connections = {};
-        this.defaultServices = config.default_service || {};
+        // here we keep config.default_service for backward compatibility
+        this.defaultServices = config.defaultService || config.default_service || {};
         this.imjoyPluginWindows = new Map();
         this.jwtSecret = config.jwtSecret || "hypha-core-default-secret-" + randId();
 

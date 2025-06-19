@@ -152,7 +152,7 @@ import { HyphaCore, type HyphaCoreConfig, type TokenConfig } from 'hypha-core';
 const config: HyphaCoreConfig = {
     port: 9527,
     jwtSecret: 'your-secure-secret',
-    base_url: 'http://localhost:9527/'
+    baseUrl: 'http://localhost:9527/'
 };
 
 const hyphaCore = new HyphaCore(config);
@@ -205,7 +205,7 @@ const hyphaCore = new HyphaCore({
     ServerClass: DenoWebSocketServer,      // Use real WebSocket server
     WebSocketClass: DenoWebSocketClient,   // Use real WebSocket client
     jwtSecret: "deno-hypha-secret-key",
-    default_service: {
+    defaultService: {
         // Services with context for authentication and workspace info
         hello: (name, context) => {
             name = name || "World";
@@ -302,7 +302,7 @@ The Deno server properly handles service registration with workspace security:
 // This bypasses workspace security for system services
 await hyphaCore.workspaceManager.setup({
     client_id: hyphaCore.workspaceManagerId,
-    default_service: {
+    defaultService: {
         // These become accessible as server.hello(), server.get_time(), etc.
         hello: (name, context) => `Hello, ${name || "World"}!`,
         get_time: (context) => new Date().toISOString(),
@@ -381,7 +381,7 @@ import { HyphaCore } from "https://cdn.jsdelivr.net/npm/hypha-core@0.20.55/dist/
 const hyphaCore = new HyphaCore({
     port: 9527,
     jwtSecret: 'your-secure-secret-key',
-    base_url: 'http://localhost:9527/',  // Explicit base URL for server
+    baseUrl: 'http://localhost:9527/',  // Explicit base URL for server
 });
 
 // Start server
@@ -419,7 +419,7 @@ import { HyphaCore } from 'hypha-core';
 const hyphaCore = new HyphaCore({
     port: 9527,
     jwtSecret: process.env.HYPHA_JWT_SECRET,
-    base_url: 'http://localhost:9527/',
+    baseUrl: 'http://localhost:9527/',
 });
 
 // Environment detection
@@ -479,16 +479,16 @@ See [`examples/deno-example.js`](./examples/deno-example.js) for a full working 
 ```javascript
 const hyphaCore = new HyphaCore({
     port: 8080,                    // Server port (default: 8080)
-    base_url: "https://myapp.com/", // Base URL for serving template files (must end with /)
+    baseUrl: "https://myapp.com/", // Base URL for serving template files (must end with /)
     url: "wss://myserver.com/ws",  // Direct WebSocket URL (alternative to port)
-    default_service: {             // Default services to register
+    defaultService: {             // Default services to register
         myService: async () => { /* implementation */ }
     }
 });
 ```
 
 **Important Notes:**
-- `base_url` must end with a forward slash (`/`)
+- `baseUrl` must end with a forward slash (`/`)
 - Cannot specify both `url` and `port` - choose one
 - If using `url`, it must end with `/ws`
 
@@ -2126,9 +2126,9 @@ See the [Complete Authentication Guide](#complete-authentication-guide) section 
 
 **Config Options:**
 - `port` - Server port (default: 8080)
-- `base_url` - Base URL for serving template files (must end with /)
+- `baseUrl` - Base URL for serving template files (must end with /)
 - `url` - Direct WebSocket URL (alternative to port)
-- `default_service` - Default services to register
+- `defaultService` - Default services to register
 - `jwtSecret` - Secret key for JWT signing/verification (HS256)
 
 #### Methods

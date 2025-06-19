@@ -15,7 +15,7 @@ async function testSimpleAsgi() {
         name: 'simple-asgi-test',
         description: 'Simple ASGI test',
         port: 9620,
-        base_url: 'http://localhost:9620'
+        baseUrl: 'http://localhost:9620'
     });
 
     try {

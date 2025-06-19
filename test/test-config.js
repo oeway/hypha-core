@@ -37,7 +37,7 @@ const TEST_CONFIG = {
         WORKSPACE_CONFIG: {
             workspace: 'test-workspace',
             client_id: 'test-client',
-            default_service: {
+            defaultService: {
                 testService: () => 'test-result'
             }
         },

@@ -21,7 +21,7 @@ async function startHyphaServer() {
         ServerClass: DenoWebSocketServer,  // Use our Deno wrapper
         WebSocketClass: DenoWebSocketClient, // Use our Deno WebSocket client wrapper
         jwtSecret: "deno-hypha-secret-key",
-        default_service: {
+        defaultService: {
             // Default services always get context (as mentioned by user)
             echo: (message, context) => {
                 console.log(`Echo service called with: ${message}`, context ? `from ${context.from}` : '');

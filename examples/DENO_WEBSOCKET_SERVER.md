@@ -124,7 +124,7 @@ const hyphaCore = new HyphaCore({
     ServerClass: DenoWebSocketServer,
     WebSocketClass: DenoWebSocketClient,
     jwtSecret: "secure-secret-key",
-    default_service: {
+    defaultService: {
         // Add default services available to all clients
         ping: () => "pong",
         get_timestamp: () => Date.now()

@@ -168,10 +168,10 @@ export interface ServerConfig {
 // HyphaCore Configuration
 export interface HyphaCoreConfig {
   port?: number;
-  base_url?: string;
+  baseUrl?: string;
   url?: string;
   jwtSecret?: string;
-  default_service?: { [key: string]: any };
+  defaultService?: { [key: string]: any };
   ServerClass?: any;
   WebSocketClass?: any;
 }
@@ -199,7 +199,7 @@ export class Workspace {
   setup(config: {
     client_id: string;
     method_timeout: number;
-    default_service: any;
+    defaultService: any;
   }): Promise<void>;
 
   static workspaces: { [workspace: string]: Workspace };

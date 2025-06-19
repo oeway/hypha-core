@@ -143,10 +143,10 @@ export interface DenoWebSocketServerOptions {
     clusterOptions?: RedisClusterOptions;
     host?: string;
     port?: number;
-    base_url?: string;
+    baseUrl?: string;
     url?: string;
     jwtSecret?: string;
-    default_service?: any;
+    defaultService?: any;
 }
 
 /**
