@@ -1,11 +1,11 @@
 {
-  "nodeModulesDir": true,
+  "nodeModulesDir": "auto",
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.19",
     "redis": "npm:redis@4.6.13",
     "mock-socket": "npm:mock-socket@9.3.1",
-    "hypha-rpc": "npm:hypha-rpc@0.20.32",
-    "imjoy-rpc": "npm:imjoy-rpc@0.5.48",
+    "hypha-rpc": "npm:hypha-rpc@0.20.56",
+    "imjoy-rpc": "npm:imjoy-rpc@0.5.59",
     "@msgpack/msgpack": "npm:@msgpack/msgpack@2.8.0"
   },
   "tasks": {
@@ -20,7 +20,6 @@
     "perf:cluster": "deno run --allow-all test/performance/cluster-benchmark.js"
   },
   "compilerOptions": {
-    "allowJs": true,
     "lib": ["deno.window"]
   }
 } 
