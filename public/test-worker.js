@@ -2,7 +2,7 @@
 // This worker demonstrates service registration within a WebWorker environment
 
 // Import Hypha RPC for WebWorker integration
-importScripts("https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.55/dist/hypha-rpc-websocket.min.js");
+importScripts("https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.58/dist/hypha-rpc-websocket.min.js");
 
 console.log('🔧 Test Worker: Starting Hypha client setup...');
 
