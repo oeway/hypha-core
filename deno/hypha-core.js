@@ -1,6 +1,6 @@
 import { Server, WebSocket } from 'mock-socket';
 import { hyphaWebsocketClient } from 'hypha-rpc';
-import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert, Environment } from './utils/index.js';
+import { randId, MessageEmitter, WebsocketRPCConnection, RedisRPCConnection, assert, Environment, convertToSnakeCase } from './utils/index.js';
 import { Workspace } from './workspace.js';
 import { toCamelCase } from './utils/index.js';
 import redisClient from './utils/redis-mock.js';
@@ -173,7 +173,15 @@ class HyphaCore extends MessageEmitter {
         this.workspaceManagerId = "workspace-manager";
         this.connections = {};
         // here we keep config.default_service for backward compatibility
-        this.defaultServices = config.defaultService || config.default_service || {};
+        const defaultServices = config.defaultService || config.default_service || {};
+        
+        // Convert camelCase methods to snake_case for Python/JavaScript compatibility
+        if (defaultServices && typeof defaultServices === 'object' && Object.keys(defaultServices).length > 0) {
+            this.defaultServices = convertToSnakeCase(defaultServices);
+            console.debug('🔧 Converted defaultService methods to snake_case for compatibility');
+        } else {
+            this.defaultServices = defaultServices;
+        }
         this.imjoyPluginWindows = new Map();
         this.jwtSecret = config.jwtSecret || "hypha-core-default-secret-" + randId();
 

@@ -1,4 +1,4 @@
-import { RedisRPCConnection, Environment, parsePluginCode } from './utils/index.js';
+import { RedisRPCConnection, Environment, parsePluginCode, convertToSnakeCase } from './utils/index.js';
 import { hyphaWebsocketClient } from 'hypha-rpc';
 
 // Ensure the client_id is safe
@@ -247,10 +247,13 @@ export class Workspace {
         // Check if this is a local service (has function properties)
         const isLocalService = this._hasServiceFunctions(service);
         if (isLocalService) {
+            // Convert camelCase methods to snake_case for Python/JavaScript compatibility
+            service = convertToSnakeCase(service);
+            
             // Store the complete service object locally for direct access
             const localServiceKey = `${service.id}@${service.app_id}`;
             this._localServices.set(localServiceKey, service);
-            console.info(`Storing local service: ${localServiceKey}`);
+            console.info(`Storing local service with snake_case methods: ${localServiceKey}`);
         }
         
         // Check if the service already exists
@@ -1254,13 +1257,9 @@ export class Workspace {
             "critical": (msg, context) => {
                 console.error(msg);
             },
-            "get_service": this.getService.bind(this),
-            "getService": this.getService.bind(this),  // camelCase alias
-
-            "list_services": this.listServices.bind(this),
-            "listServices": this.listServices.bind(this),  // camelCase alias
-
-            "generate_token": async (tokenConfig, context) => {
+            "getService": this.getService.bind(this),
+            "listServices": this.listServices.bind(this),
+            "generateToken": async (tokenConfig, context) => {
                 // Handle default value for tokenConfig
                 if (!tokenConfig) {
                     tokenConfig = {};
@@ -1302,26 +1301,32 @@ export class Workspace {
                 // Generate and return JWT token
                 return await generateJWT(payload, jwtSecret);
             },
-            "load_app": async (config, extra_config, context) => {
+            "loadApp": async (config, extra_config, context) => {
                 return this.loadApp(config, extra_config, context);
             },
-            "create_window": async (config, extra_config, context) => {
+            "createWindow": async (config, extra_config, context) => {
                 return this.createWindow(config, extra_config, context);
             },
-            "get_window": async (config, context) => {
+            "getWindow": async (config, context) => {
                 return this.getWindow(config, context);
             },
-            "get_app": async (config, extra_config, context) => {
+            "getApp": async (config, extra_config, context) => {
                 return this.getApp(config, extra_config, context);
             },
-            "register_service": async (service, context) => {
+            "registerService": async (service, context) => {
                 return await this.registerService(service, context);
+            },
+            "unregisterService": async (serviceId, context) => {
+                return await this.unregisterService(serviceId, context);
             },
         };
         // make it compatible with imjoy
-        service.getPlugin = service.get_app;
-        service.loadPlugin = service.load_app;
-        service.getWindow = service.get_window;
-        return service;
+        service.getPlugin = service.getApp;
+        service.loadPlugin = service.loadApp;
+        
+        // Convert camelCase methods to snake_case for Python/JavaScript compatibility
+        const convertedService = convertToSnakeCase(service);
+        console.debug('🔧 Converted workspace default service methods to snake_case for compatibility');
+        return convertedService;
     }
 }
