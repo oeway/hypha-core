@@ -755,11 +755,11 @@ class HyphaCore extends MessageEmitter {
         config.client_id = config.client_id || randId();
         const rawApi = await connectToServer(config);
         
-        // Create camelCase wrapper for the API
-        return this._createCamelCaseWrapper(rawApi);
+        // Create camelCase wrapper for the API and add config exposure
+        return this._createCamelCaseWrapper(rawApi, config);
     }
 
-    _createCamelCaseWrapper(rawApi) {
+    _createCamelCaseWrapper(rawApi, connectionConfig = {}) {
         const wrappedApi = {};
         
         // Copy all properties and convert method names to camelCase
@@ -770,6 +770,34 @@ class HyphaCore extends MessageEmitter {
             } else {
                 wrappedApi[camelKey] = rawApi[key];
             }
+        }
+        
+        // Expose server configuration information
+        // Preserve existing config if it exists (for direct API), otherwise create from connection info
+        if (rawApi.config) {
+            // Use existing config from direct API wrapper
+            wrappedApi.config = rawApi.config;
+        } else {
+            // Try to get connection info from rawApi if available (from hypha-rpc)
+            const connectionInfo = rawApi._connection_info || rawApi.connection_info || {};
+            
+            wrappedApi.config = {
+                // Connection info from server (if available)
+                public_base_url: connectionInfo.public_base_url || this.url,
+                workspace: connectionInfo.workspace || connectionConfig.workspace,
+                client_id: connectionInfo.client_id || connectionConfig.client_id,
+                
+                // Additional useful config info
+                local_base_url: connectionInfo.local_base_url || this.url,
+                server_url: this.url,
+                manager_id: connectionInfo.manager_id,
+                user: connectionInfo.user,
+                
+                // Connection metadata
+                hypha_version: connectionInfo.hypha_version,
+                reconnection_token: connectionInfo.reconnection_token,
+                reconnection_token_life_time: connectionInfo.reconnection_token_life_time
+            };
         }
         
         return wrappedApi;
@@ -812,8 +840,13 @@ class HyphaCore extends MessageEmitter {
             // API properties that tests expect
             id: context.from.split('/')[1], // Extract client ID from "workspace/clientId"
             config: {
+                public_base_url: this.url,
                 workspace: context.ws,
-                server_url: this.url
+                client_id: context.from.split('/')[1],
+                local_base_url: this.url,
+                server_url: this.url,
+                manager_id: this.workspaceManagerId,
+                user: context.user
             },
             
             // Workspace management functions
