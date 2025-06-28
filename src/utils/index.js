@@ -10,6 +10,62 @@ export function toCamelCase(str) {
     return str.replace(/_./g, (match) => match[1].toUpperCase());
 }
 
+export function toSnakeCase(str) {
+    // Only convert if the string contains camelCase (has uppercase letters but no underscores)
+    if (!str.includes('_') && /[A-Z]/.test(str)) {
+        return str.replace(/([A-Z])/g, '_$1').toLowerCase();
+    }
+    return str; // Return unchanged if already snake_case or no camelCase detected
+}
+
+/**
+ * Convert camelCase method names to snake_case in a service object
+ * This ensures compatibility with both Python and JavaScript/TypeScript clients
+ * since hypha-rpc clients automatically convert camelCase to snake_case
+ */
+export function convertToSnakeCase(service) {
+    const convertedService = {};
+    
+    // Helper function to process nested objects
+    function processObject(obj) {
+        const result = {};
+        
+        for (const [key, value] of Object.entries(obj)) {
+            // Skip metadata fields - keep them as-is
+            if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
+                result[key] = value;
+                continue;
+            }
+            
+            // Convert the key to snake_case
+            const snakeKey = toSnakeCase(key);
+            
+            if (typeof value === 'function') {
+                // Use snake_case key for function
+                result[snakeKey] = value;
+                if (snakeKey !== key) {
+                    console.debug(`🔄 Converted method: ${key} → ${snakeKey}`);
+                }
+            } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                // Skip RPC proxy objects
+                if (value._rintf) {
+                    result[snakeKey] = value;
+                    continue;
+                }
+                // Recursively process nested objects
+                result[snakeKey] = processObject(value);
+            } else {
+                // For other properties, use snake_case key
+                result[snakeKey] = value;
+            }
+        }
+        
+        return result;
+    }
+    
+    return processObject(service);
+}
+
 export class MessageEmitter {
     constructor(debug) {
       this._event_handlers = {};

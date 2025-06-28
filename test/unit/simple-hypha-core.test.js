@@ -857,8 +857,9 @@ describe('HyphaCore Basic Functionality Tests', () => {
                 defaultService: defaultServices
             });
 
-            expect(core.defaultServices).to.equal(defaultServices);
-            expect(core.defaultServices.customService()).to.equal('custom result');
+            // After conversion, the method should be in snake_case
+            expect(core.defaultServices.custom_service).to.be.a('function');
+            expect(core.defaultServices.custom_service()).to.equal('custom result');
         });
 
         it('should generate unique server identifiers', () => {

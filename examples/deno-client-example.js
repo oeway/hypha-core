@@ -11,7 +11,7 @@
 
 // Import hypha-rpc for WebSocket client
 // Note: In real usage, you might want to use a CDN import or npm import
-import hyphaRPC from "https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.58/dist/hypha-rpc-websocket.min.js";
+import hyphaRPC from "https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.59/dist/hypha-rpc-websocket.min.js";
 const { connectToServer } = hyphaRPC;
 
 async function connectToHyphaServer() {
