@@ -626,7 +626,106 @@ export class Workspace {
     patchServiceConfig(workspace, serviceApi) {
         serviceApi.config = serviceApi.config || {};
         serviceApi.config.workspace = workspace;
+        
+        // Check if this is a local service with function implementations
+        const isLocalService = this._hasServiceFunctions(serviceApi);
+        
+        if (isLocalService && serviceApi.config.require_context) {
+            // For local services that require context, wrap each method to inject proper context
+            return this._wrapLocalServiceMethods(serviceApi, workspace);
+        }
+        
         return serviceApi;
+    }
+
+    /**
+     * Wrap local service methods to inject proper context
+     */
+    _wrapLocalServiceMethods(serviceApi, workspace) {
+        const wrappedService = { ...serviceApi };
+        
+        // Get the workspace client info to extract user details
+        const getContextForCall = () => {
+            // Try to get context from current RPC call if available
+            if (this._rpc && this._rpc.current_context) {
+                return {
+                    ws: this._rpc.current_context.ws || workspace,
+                    user: this._rpc.current_context.user || {
+                        id: "anonymous",
+                        email: "",
+                        roles: [],
+                        scopes: []
+                    },
+                    from: this._rpc.current_context.from || `${workspace}/anonymous-client`
+                };
+            }
+            
+            // Fallback to default context
+            return {
+                ws: workspace,
+                user: {
+                    id: "anonymous",
+                    email: "",
+                    roles: [],
+                    scopes: []
+                },
+                from: `${workspace}/anonymous-client`
+            };
+        };
+        
+        // Recursively wrap function properties
+        const wrapFunctions = (obj, path = '') => {
+            const wrapped = {};
+            
+            for (const [key, value] of Object.entries(obj)) {
+                if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
+                    // Skip metadata fields
+                    wrapped[key] = value;
+                } else if (typeof value === 'function') {
+                    // Wrap function to inject context
+                    wrapped[key] = (...args) => {
+                        // Check if the last argument looks like a context object
+                        const lastArg = args[args.length - 1];
+                        const hasContext = lastArg && 
+                            typeof lastArg === 'object' && 
+                            !Array.isArray(lastArg) &&
+                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg);
+                        
+                        if (!hasContext) {
+                            // Inject context as the last argument
+                            args.push(getContextForCall());
+                        } else {
+                            // Merge with existing context, ensuring all required fields are set
+                            const baseContext = getContextForCall();
+                            const mergedContext = {
+                                ...lastArg,  // Preserve existing context properties
+                                ws: lastArg.ws || baseContext.ws,
+                                user: lastArg.user || baseContext.user,
+                                from: lastArg.from || baseContext.from
+                            };
+                            args[args.length - 1] = mergedContext;
+                        }
+                        
+                        return value.apply(obj, args);
+                    };
+                } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                    // Don't wrap _rintf objects as they're RPC proxies
+                    if (value._rintf) {
+                        wrapped[key] = value;
+                    } else {
+                        // Recursively wrap nested objects
+                        wrapped[key] = wrapFunctions(value, `${path}.${key}`);
+                    }
+                } else {
+                    // Copy other values as-is
+                    wrapped[key] = value;
+                }
+            }
+            
+            return wrapped;
+        };
+        
+        return wrapFunctions(wrappedService);
     }
 
     async listServices(query, context) {
@@ -756,12 +855,6 @@ export class Workspace {
         }
     
         return services;
-    }
-
-    patchServiceConfig(workspace, serviceApi) {
-        serviceApi.config = serviceApi.config || {};
-        serviceApi.config.workspace = workspace;
-        return serviceApi;
     }
 
     async createWindow(config, extra_config, context) {

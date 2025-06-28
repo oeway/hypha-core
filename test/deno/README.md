@@ -1,6 +1,96 @@
 # Deno Tests
 
-This folder contains tests that run specifically in the Deno environment. These tests require the Deno runtime to execute properly because they use the `DenoWebSocketServer` which depends on Deno-specific APIs.
+This directory contains tests that must run in the Deno environment to test functionality that depends on the Deno WebSocket server implementation.
+
+## Test Files
+
+### `asgi-tests.js`
+Comprehensive tests for ASGI application functionality, including:
+- Basic server startup and service registration
+- HTTP API access to registered services
+- ASGI app routing and responses
+- Error handling and edge cases
+
+Run with:
+```bash
+deno run --allow-net --allow-read --allow-env test/deno/asgi-tests.js
+```
+
+### `simple-asgi-test.js`
+A simplified ASGI test for debugging basic functionality:
+- Simple ASGI service registration
+- Basic HTTP request/response cycle
+- Minimal error debugging
+
+Run with:
+```bash
+deno run --allow-net --allow-read --allow-env test/deno/simple-asgi-test.js
+```
+
+### `context-injection-test.js` (NEW)
+Tests for the context injection fix that ensures local services with `require_context: true` receive proper context:
+- Context injection for services with `require_context: true`
+- No context injection for services without `require_context`
+- Nested service objects context injection
+- Context merging when partial context is provided
+- HTTP API calls receiving proper context
+- ASGI services with context injection
+
+Run with:
+```bash
+deno run --allow-net --allow-read --allow-env test/deno/context-injection-test.js
+```
+
+**What the Context Injection Tests Verify:**
+- Local services with `require_context: true` automatically receive context containing `ws`, `user`, and `from` fields
+- Services without `require_context` are not affected
+- Nested service methods also receive proper context
+- Context merging works when partial context is already provided
+- Both function services and ASGI services work correctly with context injection
+
+### `debug-asgi.js`
+Debug utilities and helpers for ASGI testing.
+
+## Running All Tests
+
+To run all Deno tests:
+
+```bash
+# Run individual tests
+deno run --allow-net --allow-read --allow-env test/deno/asgi-tests.js
+deno run --allow-net --allow-read --allow-env test/deno/simple-asgi-test.js
+deno run --allow-net --allow-read --allow-env test/deno/context-injection-test.js
+
+# Or run from the project root via npm
+npm run test:deno  # If configured in package.json
+```
+
+## Test Environment
+
+These tests require:
+- Deno runtime
+- Network permissions (`--allow-net`)
+- File system read permissions (`--allow-read`)
+- Environment variable access (`--allow-env`)
+
+Each test runs on different ports to avoid conflicts:
+- `asgi-tests.js`: ports 9610-9619
+- `simple-asgi-test.js`: port 9620
+- `context-injection-test.js`: ports 9700-9705
+
+## Context Injection Fix
+
+The context injection tests specifically verify the fix implemented in `src/workspace.js` that ensures:
+
+1. **Local services** (services with actual function implementations) that have `config.require_context: true` automatically receive context as the last parameter
+2. **Context structure** includes:
+   - `ws`: workspace name (e.g., "default")
+   - `user`: user information object with id, email, roles, scopes
+   - `from`: client identifier (e.g., "default/anonymous-client")
+3. **Context merging** preserves custom context properties while ensuring required fields are present
+4. **No side effects** for services that don't require context
+
+This fixes the issue where `context.ws` was `undefined` for local services, ensuring they work seamlessly with the same interface as remote services.
 
 ## Requirements
 
