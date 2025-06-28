@@ -1,4 +1,4 @@
-import { RedisRPCConnection, Environment, parsePluginCode, convertToSnakeCase } from './utils/index.js';
+import { RedisRPCConnection, Environment, parsePluginCode, convertToSnakeCase, convertToCamelCase } from './utils/index.js';
 import { hyphaWebsocketClient } from 'hypha-rpc';
 
 // Ensure the client_id is safe
@@ -633,9 +633,14 @@ export class Workspace {
         // Check if this is a local service with function implementations
         const isLocalService = this._hasServiceFunctions(serviceApi);
         
-        if (isLocalService && serviceApi.config.require_context) {
-            // For local services that require context, wrap each method to inject proper context
-            return this._wrapLocalServiceMethods(serviceApi, workspace);
+        if (isLocalService) {
+            // For local services, convert snake_case method names back to camelCase for JavaScript clients
+            serviceApi = convertToCamelCase(serviceApi);
+            
+            if (serviceApi.config.require_context) {
+                // For local services that require context, wrap each method to inject proper context
+                return this._wrapLocalServiceMethods(serviceApi, workspace);
+            }
         }
         
         return serviceApi;
@@ -651,15 +656,17 @@ export class Workspace {
         const getContextForCall = () => {
             // Try to get context from current RPC call if available
             if (this._rpc && this._rpc.current_context) {
+                // For workspace manager with "*" workspace, use the context's workspace if available
+                const contextWorkspace = this._rpc.current_context.ws || workspace;
                 return {
-                    ws: this._rpc.current_context.ws || workspace,
+                    ws: contextWorkspace,
                     user: this._rpc.current_context.user || {
                         id: "anonymous",
                         email: "",
                         roles: [],
                         scopes: []
                     },
-                    from: this._rpc.current_context.from || `${workspace}/anonymous-client`
+                    from: this._rpc.current_context.from || `${contextWorkspace}/anonymous-client`
                 };
             }
             

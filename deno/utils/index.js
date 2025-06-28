@@ -66,6 +66,52 @@ export function convertToSnakeCase(service) {
     return processObject(service);
 }
 
+/**
+ * Convert snake_case method names back to camelCase in a service object
+ * This is used when returning services to JavaScript clients that expect camelCase method names
+ */
+export function convertToCamelCase(service) {
+
+    // Helper function to process nested objects
+    function processObject(obj) {
+        const result = {};
+        
+        for (const [key, value] of Object.entries(obj)) {
+            // Skip metadata fields - keep them as-is
+            if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
+                result[key] = value;
+                continue;
+            }
+            
+            // Convert the key to camelCase
+            const camelKey = toCamelCase(key);
+            
+            if (typeof value === 'function') {
+                // Use camelCase key for function
+                result[camelKey] = value;
+                if (camelKey !== key) {
+                    console.debug(`🔄 Converted method: ${key} → ${camelKey}`);
+                }
+            } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                // Skip RPC proxy objects
+                if (value._rintf) {
+                    result[camelKey] = value;
+                    continue;
+                }
+                // Recursively process nested objects
+                result[camelKey] = processObject(value);
+            } else {
+                // For other properties, use camelCase key
+                result[camelKey] = value;
+            }
+        }
+        
+        return result;
+    }
+    
+    return processObject(service);
+}
+
 export class MessageEmitter {
     constructor(debug) {
       this._event_handlers = {};
