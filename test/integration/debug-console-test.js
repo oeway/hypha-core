@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
 test.describe('Debug Console', () => {
     test('should check console errors on page load', async ({ page }) => {
