@@ -365,16 +365,27 @@ export class RedisRPCConnection {
         
         let targetId = message.to;
 
+        // Handle dynamic service IDs (e.g. workspace-manager:g6ycaf1d2u1751144287428)
         if (!targetId.includes("/")) {
-            if (targetId.includes("/workspace-manager-")) {
-                throw new Error(`Invalid target ID: ${targetId}, it appears that the target is a workspace manager (target_id should starts with */)`);
+            // If we're in the * workspace and the target is a dynamic service
+            if (this._workspace === "*" && targetId.includes(":")) {
+                // Extract the actual workspace from the message if available
+                const actualWorkspace = message.ws || message.workspace || this._workspace;
+                targetId = `${actualWorkspace}/${targetId}`;
+            } else {
+                if (targetId.includes("/workspace-manager-")) {
+                    throw new Error(`Invalid target ID: ${targetId}, it appears that the target is a workspace manager (target_id should starts with */)`);
+                }
+                targetId = `${this._workspace}/${targetId}`;
             }
-            targetId = `${this._workspace}/${targetId}`;
         }
 
         const sourceId = `${this._workspace}/${this._clientId}`;
 
-        message.ws = this._workspace === "*" ? targetId.split("/")[0] : this._workspace;
+        // For * workspace, use the target's workspace
+        const effectiveWorkspace = this._workspace === "*" ? targetId.split("/")[0] : this._workspace;
+
+        message.ws = effectiveWorkspace;
         message.to = targetId;
         message.from = sourceId;
         message.user = this._userInfo;
@@ -385,7 +396,7 @@ export class RedisRPCConnection {
         finalData.set(encodedUpdatedMessage, 0);
         finalData.set(new Uint8Array(remainingData), encodedUpdatedMessage.length);
 
-        this._eventBus.emit(`${targetId}:msg`, finalData.buffer);
+        await this._eventBus.emit(`${targetId}:msg`, finalData.buffer);
     }
 
     /**
