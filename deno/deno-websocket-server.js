@@ -422,6 +422,13 @@ class HyphaServiceProxy {
     }
 
     /**
+     * Convert snake_case to camelCase
+     */
+    snakeToCamel(str) {
+        return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+    }
+
+    /**
      * Get workspace interface by accessing workspace manager with proper context
      */
     async getWorkspaceInterface(workspace, authToken) {
@@ -444,10 +451,25 @@ class HyphaServiceProxy {
                 // we should ensure context is always the last argument
                 // we should make sure the function takes at least one argument
                 // Bind context to all function properties
-                boundDefaultService[key] = (...args) => value(...args, context);
+                const boundFunction = (...args) => value(...args, context);
+                
+                // Add both snake_case and camelCase versions
+                boundDefaultService[key] = boundFunction;
+                
+                // Add camelCase version if different from original
+                const camelKey = this.snakeToCamel(key);
+                if (camelKey !== key) {
+                    boundDefaultService[camelKey] = boundFunction;
+                }
             } else {
                 // Keep non-function properties as-is
                 boundDefaultService[key] = value;
+                
+                // Add camelCase version for non-function properties too if different
+                const camelKey = this.snakeToCamel(key);
+                if (camelKey !== key) {
+                    boundDefaultService[camelKey] = value;
+                }
             }
         }
         
@@ -572,6 +594,71 @@ class HyphaServiceProxy {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
                 'Access-Control-Allow-Headers': 'Authorization,Content-Type',
+            }
+        });
+    }
+
+    /**
+     * Create streaming response for async generators and regular generators
+     */
+    createStreamingResponse(generator) {
+        const self = this; // Capture 'this' context
+        
+        const stream = new ReadableStream({
+            async start(controller) {
+                try {
+                    // Check if it's an async generator
+                    if (typeof generator[Symbol.asyncIterator] === 'function') {
+                        // Handle async generator
+                        for await (const value of generator) {
+                            // Serialize each yielded value
+                            const serializedValue = self.serialize(value);
+                            
+                            // Convert to JSON and add newline for JSONL format
+                            const chunk = JSON.stringify(serializedValue) + '\n';
+                            
+                            // Enqueue the chunk
+                            controller.enqueue(new TextEncoder().encode(chunk));
+                        }
+                    } else {
+                        // Handle regular generator
+                        for (const value of generator) {
+                            // Serialize each yielded value
+                            const serializedValue = self.serialize(value);
+                            
+                            // Convert to JSON and add newline for JSONL format
+                            const chunk = JSON.stringify(serializedValue) + '\n';
+                            
+                            // Enqueue the chunk
+                            controller.enqueue(new TextEncoder().encode(chunk));
+                        }
+                    }
+                    
+                    // Close the stream when generator is exhausted
+                    controller.close();
+                } catch (error) {
+                    // Handle errors in the generator
+                    console.error('Error in streaming response:', error);
+                    const errorChunk = JSON.stringify({
+                        error: error.message,
+                        type: 'error'
+                    }) + '\n';
+                    controller.enqueue(new TextEncoder().encode(errorChunk));
+                    controller.close();
+                }
+            }
+        });
+
+        return new Response(stream, {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/x-ndjson', // JSONL format
+                'Transfer-Encoding': 'chunked',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Headers': 'Authorization,Content-Type',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
             }
         });
     }
@@ -773,9 +860,31 @@ class HyphaServiceProxy {
                 }
             }
             
+            // Check if result is an async generator first (before awaiting)
+            if (result && typeof result[Symbol.asyncIterator] === 'function') {
+                return this.createStreamingResponse(result);
+            }
+            
+            // Check if result is a regular generator
+            if (result && typeof result[Symbol.iterator] === 'function' && 
+                typeof result.next === 'function' && typeof result.return === 'function') {
+                return this.createStreamingResponse(result);
+            }
+            
             // Handle async functions
             if (result && typeof result.then === 'function') {
                 result = await result;
+                
+                // Check again if the awaited result is an async generator
+                if (result && typeof result[Symbol.asyncIterator] === 'function') {
+                    return this.createStreamingResponse(result);
+                }
+                
+                // Check if the awaited result is a regular generator
+                if (result && typeof result[Symbol.iterator] === 'function' && 
+                    typeof result.next === 'function' && typeof result.return === 'function') {
+                    return this.createStreamingResponse(result);
+                }
             }
             
             return this.createSuccessResponse(this.serialize(result));
