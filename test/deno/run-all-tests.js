@@ -7,6 +7,7 @@
  */
 
 import { contextTestRunner } from './context-injection-test.js';
+import { streamingTestRunner } from './streaming-test.js';
 
 class DenoTestSuite {
     constructor() {
@@ -28,6 +29,11 @@ class DenoTestSuite {
                 const success = await contextTestRunner.run();
                 this.totalPassed += contextTestRunner.passed;
                 this.totalFailed += contextTestRunner.failed;
+                return success;
+            } else if (filename === 'streaming-test.js') {
+                const success = await streamingTestRunner.run();
+                this.totalPassed += streamingTestRunner.passed;
+                this.totalFailed += streamingTestRunner.failed;
                 return success;
             } else {
                 // For other test files, run them as subprocess
@@ -63,6 +69,7 @@ class DenoTestSuite {
         const testFiles = [
             { filename: 'simple-asgi-test.js', description: 'Simple ASGI Test' },
             { filename: 'context-injection-test.js', description: 'Context Injection Tests' },
+            { filename: 'streaming-test.js', description: 'Async Generator Streaming Tests' },
             // Note: asgi-tests.js is commented out because it takes longer and might conflict
             // { filename: 'asgi-tests.js', description: 'Comprehensive ASGI Tests' },
         ];

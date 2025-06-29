@@ -27,7 +27,7 @@ Run with:
 deno run --allow-net --allow-read --allow-env test/deno/simple-asgi-test.js
 ```
 
-### `context-injection-test.js` (NEW)
+### `context-injection-test.js`
 Tests for the context injection fix that ensures local services with `require_context: true` receive proper context:
 - Context injection for services with `require_context: true`
 - No context injection for services without `require_context`
@@ -48,6 +48,28 @@ deno run --allow-net --allow-read --allow-env test/deno/context-injection-test.j
 - Context merging works when partial context is already provided
 - Both function services and ASGI services work correctly with context injection
 
+### `streaming-test.js` (NEW)
+Tests for async generator streaming functionality in the HTTP proxy:
+- Async generator streaming via HTTP with JSONL format
+- Regular generator streaming support
+- Promise-wrapped async generators
+- Error handling in streaming responses
+- Mixed data types streaming
+- Real-time progressive response delivery
+
+Run with:
+```bash
+deno run --allow-net --allow-read --allow-env test/deno/streaming-test.js
+```
+
+**What the Streaming Tests Verify:**
+- Service functions returning async generators are automatically streamed as JSONL
+- Regular (sync) generators are also properly streamed
+- Functions returning promises that resolve to generators work correctly
+- Errors in generators are captured and included in the stream
+- Content-Type is set to `application/x-ndjson` for streaming responses
+- Real-time streaming without buffering all data first
+
 ### `debug-asgi.js`
 Debug utilities and helpers for ASGI testing.
 
@@ -60,6 +82,7 @@ To run all Deno tests:
 deno run --allow-net --allow-read --allow-env test/deno/asgi-tests.js
 deno run --allow-net --allow-read --allow-env test/deno/simple-asgi-test.js
 deno run --allow-net --allow-read --allow-env test/deno/context-injection-test.js
+deno run --allow-net --allow-read --allow-env test/deno/streaming-test.js
 
 # Or run from the project root via npm
 npm run test:deno  # If configured in package.json
@@ -77,6 +100,7 @@ Each test runs on different ports to avoid conflicts:
 - `asgi-tests.js`: ports 9610-9619
 - `simple-asgi-test.js`: port 9620
 - `context-injection-test.js`: ports 9700-9705
+- `streaming-test.js`: ports 9800-9803
 
 ## Context Injection Fix
 
@@ -138,6 +162,9 @@ chmod +x test/deno/asgi-tests.js
 - Chunked response delivery
 - Timing verification to ensure true streaming
 - Memory-efficient data transfer
+- Async generator streaming with JSONL format
+- Regular generator streaming support
+- Error handling in streaming responses
 
 ### 5. Error Handling
 - 404 responses for non-existent routes
