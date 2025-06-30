@@ -889,9 +889,18 @@ class HyphaServiceProxy {
                 return this.createSuccessResponse(serviceInfo);
             }
             
-            // Use getService to get the service info
+            // Use getServiceAsUser to get the service info for regular services
             const mode = queryParams._mode || null;
-            const service = await workspaceInterface.getService(serviceId, { mode });
+            
+            // Create user context for the service call
+            const userContext = this.createUserContext(authToken, { workspace });
+            
+            // Use getServiceAsUser which handles context injection internally based on require_context
+            const service = await this.hyphaCore.workspaceManager.getServiceAsUser(
+                serviceId, 
+                { mode },
+                userContext
+            );
             
             if (!service) {
                 return this.createErrorResponse(404, `Service ${serviceId} not found`);
@@ -943,15 +952,29 @@ class HyphaServiceProxy {
             
             let service;
             if (serviceId === 'ws') {
-                // For workspace service, use the workspace interface itself
-                service = workspaceInterface;
+                // For workspace service, also use getServiceAsUser for consistency
+                const userContext = this.createUserContext(authToken, { workspace });
+                service = await this.hyphaCore.workspaceManager.getServiceAsUser(
+                    'ws', 
+                    { mode: queryParams._mode || null },
+                    userContext
+                );
             } else {
                 const mode = queryParams._mode || null;
-                service = await workspaceInterface.getService(serviceId, { mode });
                 
-                if (!service) {
-                    return this.createErrorResponse(404, `Service ${serviceId} not found`);
-                }
+                // Create user context for the service call
+                const userContext = this.createUserContext(authToken, { workspace });
+                
+                // Use getServiceAsUser which handles context injection internally based on require_context
+                service = await this.hyphaCore.workspaceManager.getServiceAsUser(
+                    serviceId, 
+                    { mode },
+                    userContext
+                );
+            }
+            
+            if (!service) {
+                return this.createErrorResponse(404, `Service ${serviceId} not found`);
             }
             
             // Get the function by key (support dot notation for nested objects)
@@ -966,50 +989,38 @@ class HyphaServiceProxy {
                 return this.createSuccessResponse(this.serialize(func));
             }
             
-            // Call the function - context is already bound in getWorkspaceInterface
+            // Call the function - context is already handled by getServiceAsUser if needed
             let result;
             
-            // For workspace service functions, we need to handle them differently
-            // since they're already bound with context
-            if (serviceId === 'ws') {
-                // For workspace services, the functions are already bound with context
-                // We need to call them with just the named parameters (not using parameter parsing)
-                // since the bound function signature is (...args) => original(...args, context)
+            // For both workspace services and regular services with require_context,
+            // the context is already properly injected, so we can use the same calling logic
+            
+            // Try to extract parameter names from function signature  
+            const funcStr = func.toString();
+            const paramMatch = funcStr.match(/\(([^)]*)\)/);
+            
+            // Check if this is a wrapped function (contains ...args)
+            const isWrappedFunction = funcStr.includes('...args');
+            
+            if (isWrappedFunction) {
+                // For wrapped functions, pass all kwargs values as positional arguments
+                // The wrapper will handle context injection automatically
+                const args = Object.values(functionKwargs);
+                result = func(...args);
+            } else if (paramMatch && paramMatch[1].trim()) {
+                // Extract parameter names for regular functions
+                const params = paramMatch[1].split(',').map(p => p.trim().split('=')[0].trim());
                 
-                // For now, handle common parameter patterns manually
-                if (functionKey === 'echo' && functionKwargs.msg !== undefined) {
-                    result = func(functionKwargs.msg);
-                } else if (functionKey === 'log' && functionKwargs.msg !== undefined) {
-                    result = func(functionKwargs.msg);
-                } else if (functionKey === 'listServices') {
-                    result = func(functionKwargs);
-                } else if (functionKey === 'getService') {
-                    result = func(functionKwargs.serviceId || functionKwargs.service_id, functionKwargs);
-                } else {
-                    // Fallback: call with all values as arguments
-                    const args = Object.values(functionKwargs);
-                    result = func(...args);
+                // Build argument array based on parameter names
+                const args = [];
+                for (const paramName of params) {
+                    args.push(functionKwargs[paramName]);
                 }
+                
+                result = func(...args);
             } else {
-                // For regular services, try to extract parameter names from function signature
-                const funcStr = func.toString();
-                const paramMatch = funcStr.match(/\(([^)]*)\)/);
-                
-                if (paramMatch && paramMatch[1].trim()) {
-                    // Extract parameter names
-                    const params = paramMatch[1].split(',').map(p => p.trim().split('=')[0].trim());
-                    
-                    // Build argument array based on parameter names
-                    const args = [];
-                    for (const paramName of params) {
-                        args.push(functionKwargs[paramName]);
-                    }
-                    
-                    result = func(...args);
-                } else {
-                    // Function has no parameters
-                    result = func();
-                }
+                // Function has no parameters
+                result = func();
             }
             
             // Check if result is an async generator first (before awaiting)
@@ -1061,10 +1072,27 @@ class HyphaServiceProxy {
             
             // Get service info to check if it's an ASGI service
             const mode = queryParams._mode || null;
-            const service = await workspaceInterface.getService(serviceId, { mode });
+            let service;
+            if (serviceId === 'ws') {
+                // For workspace service, use the workspace interface itself
+                service = workspaceInterface;
+            } else {
+                service = await workspaceInterface.getService(serviceId, { mode });
+                
+                if (!service) {
+                    return this.createErrorResponse(404, `Service ${serviceId} not found`);
+                }
+                
+                // Only wrap with context if the service explicitly requires it
+                const requiresContext = service.config && service.config.require_context;
+                if (requiresContext) {
+                    const context = this.createUserContext(authToken, { workspace });
+                    service = this.wrapServiceWithContext(service, context);
+                }
+            }
             
             if (!service) {
-                return this.createErrorResponse(404, `Service ${serviceId} not found`);
+                return this.createErrorResponse(404, 'Not Found');
             }
             
             // Get service info to check the type
