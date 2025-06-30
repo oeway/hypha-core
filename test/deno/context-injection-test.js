@@ -445,6 +445,120 @@ runner.test('ASGI services with require_context get context', async () => {
     }
 });
 
+// Test: Regular services receive proper context via HTTP
+runner.test('Regular services receive proper context via HTTP', async () => {
+    const hyphaCore = new HyphaCore({
+        ServerClass: DenoWebSocketServer,
+        name: 'regular-service-context-test',
+        description: 'Test regular service context injection',
+        port: 9706,
+        baseUrl: 'http://localhost:9706'
+    });
+
+    try {
+        const api = await hyphaCore.start();
+        
+        // Register a regular service WITHOUT require_context but still expects context
+        // This reproduces the user's issue more accurately
+        await api.registerService({
+            id: 'regular-context-service',
+            name: 'Regular Context Service',
+            type: 'functions',
+            config: {
+                // NOT setting require_context: true, but function still expects context
+                visibility: 'public'
+            },
+            
+            testContext: (message, context) => {
+                // This is what the user is experiencing - context is undefined
+                if (!context) {
+                    throw new Error('Context is undefined');
+                }
+                if (!context.ws) {
+                    throw new Error('Cannot read properties of undefined (reading \'ws\')');
+                }
+                return {
+                    message,
+                    workspace: context.ws,
+                    hasUser: !!context.user,
+                    hasFrom: !!context.from,
+                    hasTo: !!context.to
+                };
+            },
+            
+            // Also test a service that requires context to see the difference
+            testContextRequired: (message, context) => {
+                if (!context) {
+                    throw new Error('Context is undefined');
+                }
+                if (!context.ws) {
+                    throw new Error('Cannot read properties of undefined (reading \'ws\')');
+                }
+                return {
+                    message,
+                    workspace: context.ws,
+                    contextType: 'required'
+                };
+            }
+        });
+
+        // Also register a service that explicitly requires context
+        await api.registerService({
+            id: 'context-required-service',
+            name: 'Context Required Service',
+            type: 'functions',
+            config: {
+                require_context: true,
+                visibility: 'public'
+            },
+            
+            testContext: (message, context) => {
+                if (!context) {
+                    throw new Error('Context is undefined');
+                }
+                if (!context.ws) {
+                    throw new Error('Cannot read properties of undefined (reading \'ws\')');
+                }
+                return {
+                    message,
+                    workspace: context.ws,
+                    contextType: 'explicit'
+                };
+            }
+        });
+        
+        // Test the service WITHOUT require_context - this should fail with user's error
+        try {
+            const response1 = await fetch('http://localhost:9706/default/services/regular-context-service/testContext?message=test');
+            const result1 = await response1.json();
+            if (!response1.ok) {
+                console.log('✅ Expected failure for service without require_context:', result1);
+                assert(result1.detail && (result1.detail.includes('Context is undefined') || result1.detail.includes('Cannot read properties of undefined')), 
+                       'Should fail with context error for service without require_context');
+            } else {
+                console.log('❌ Service without require_context unexpectedly received context:', result1);
+                throw new Error('Service without require_context should not receive context');
+            }
+        } catch (error) {
+            if (error.message.includes('Service without require_context should not receive context')) {
+                throw error; // Re-throw our assertion error
+            }
+            console.log('✅ Network/context error for service without require_context (expected):', error.message);
+        }
+
+        // Test the service WITH require_context - this should work correctly
+        const response2 = await fetch('http://localhost:9706/default/services/context-required-service/testContext?message=test');
+        assert(response2.ok, 'HTTP request should succeed for service with require_context');
+        
+        const result2 = await response2.json();
+        assertEqual(result2.workspace, 'default', 'Service with require_context should receive correct workspace');
+        assertEqual(result2.contextType, 'explicit', 'Service with require_context should work correctly');
+        
+    } finally {
+        hyphaCore.close();
+    }
+});
+
 // Run all tests
 if (import.meta.main) {
     const success = await runner.run();

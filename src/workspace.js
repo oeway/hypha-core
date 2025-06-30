@@ -472,6 +472,13 @@ export class Workspace {
             throw new Error("Service ID must be a string");
         }
     
+        // Special handling for the workspace service
+        if (serviceId === 'ws') {
+            const workspaceService = this.getDefaultService();
+            workspaceService.config = { require_context: true, visibility: 'public' };
+            return workspaceService;
+        }
+    
         if ((serviceId.match(/\//g) || []).length > 1) {
             throw new Error("Service id must contain at most one '/'");
         }
@@ -1338,5 +1345,103 @@ export class Workspace {
         const convertedService = convertToSnakeCase(service);
         console.debug('🔧 Converted workspace default service methods to snake_case for compatibility');
         return convertedService;
+    }
+
+    /**
+     * Get a service and wrap it with user context if it requires context.
+     * This method is designed for HTTP/external clients that need context injection.
+     */
+    async getServiceAsUser(query, options = {}, userContext) {
+        const { mode = "default", skipTimeout = false, timeout = 5 } = options;
+        
+        // First get the service using the regular getService method
+        // We need to provide a context for getService itself, so we create a minimal one
+        const serviceContext = userContext || {
+            ws: "default",
+            user: { id: "anonymous", email: "", roles: [], scopes: [] },
+            from: "anonymous-client",
+            to: "service-proxy"
+        };
+        
+        const service = await this.getService(query, { mode, skipTimeout, timeout }, serviceContext);
+        
+        if (!service) {
+            return null;
+        }
+        
+        // Check if the service requires context injection
+        const requiresContext = service.config && service.config.require_context;
+        
+        if (requiresContext && userContext) {
+            // Wrap the service with context injection using the provided user context
+            return this._wrapServiceWithUserContext(service, userContext);
+        }
+        
+        return service;
+    }
+
+    /**
+     * Wrap service methods with user-provided context injection.
+     * Similar to _wrapLocalServiceMethods but uses provided context instead of RPC context.
+     */
+    _wrapServiceWithUserContext(serviceApi, userContext) {
+        const wrappedService = { ...serviceApi };
+        
+        const getContextForCall = () => userContext;
+        
+        // Recursively wrap function properties
+        const wrapFunctions = (obj, path = '') => {
+            const wrapped = {};
+            
+            for (const [key, value] of Object.entries(obj)) {
+                if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
+                    // Skip metadata fields
+                    wrapped[key] = value;
+                } else if (typeof value === 'function') {
+                    // Wrap function to inject context
+                    wrapped[key] = (...args) => {
+                        // Check if the last argument looks like a context object
+                        const lastArg = args[args.length - 1];
+                        const hasContext = lastArg && 
+                            typeof lastArg === 'object' && 
+                            !Array.isArray(lastArg) &&
+                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg || 'to' in lastArg);
+                        
+                        if (!hasContext) {
+                            // Inject context as the last argument
+                            args.push(getContextForCall());
+                        } else {
+                            // Merge with existing context, ensuring all required fields are set
+                            const baseContext = getContextForCall();
+                            const mergedContext = {
+                                ...lastArg,  // Preserve existing context properties
+                                ws: lastArg.ws || baseContext.ws,
+                                user: lastArg.user || baseContext.user,
+                                from: lastArg.from || baseContext.from,
+                                to: lastArg.to || baseContext.to
+                            };
+                            args[args.length - 1] = mergedContext;
+                        }
+                        
+                        return value.apply(obj, args);
+                    };
+                } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                    // Don't wrap _rintf objects as they're RPC proxies
+                    if (value._rintf) {
+                        wrapped[key] = value;
+                    } else {
+                        // Recursively wrap nested objects
+                        wrapped[key] = wrapFunctions(value, `${path}.${key}`);
+                    }
+                } else {
+                    // Copy other values as-is
+                    wrapped[key] = value;
+                }
+            }
+            
+            return wrapped;
+        };
+        
+        return wrapFunctions(wrappedService);
     }
 }
