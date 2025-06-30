@@ -666,7 +666,8 @@ export class Workspace {
                         roles: [],
                         scopes: []
                     },
-                    from: this._rpc.current_context.from || `${contextWorkspace}/anonymous-client`
+                    from: this._rpc.current_context.from || `${contextWorkspace}/anonymous-client`,
+                    to: this._rpc.current_context.to || `${contextWorkspace}/workspace-service`
                 };
             }
             
@@ -679,7 +680,8 @@ export class Workspace {
                     roles: [],
                     scopes: []
                 },
-                from: `${workspace}/anonymous-client`
+                from: `${workspace}/anonymous-client`,
+                to: `${workspace}/workspace-service`
             };
         };
         
@@ -699,7 +701,7 @@ export class Workspace {
                         const hasContext = lastArg && 
                             typeof lastArg === 'object' && 
                             !Array.isArray(lastArg) &&
-                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg);
+                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg || 'to' in lastArg);
                         
                         if (!hasContext) {
                             // Inject context as the last argument
@@ -711,7 +713,8 @@ export class Workspace {
                                 ...lastArg,  // Preserve existing context properties
                                 ws: lastArg.ws || baseContext.ws,
                                 user: lastArg.user || baseContext.user,
-                                from: lastArg.from || baseContext.from
+                                from: lastArg.from || baseContext.from,
+                                to: lastArg.to || baseContext.to
                             };
                             args[args.length - 1] = mergedContext;
                         }

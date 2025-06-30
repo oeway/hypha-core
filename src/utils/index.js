@@ -43,9 +43,7 @@ export function convertToSnakeCase(service) {
             if (typeof value === 'function') {
                 // Use snake_case key for function
                 result[snakeKey] = value;
-                if (snakeKey !== key) {
-                    console.debug(`🔄 Converted method: ${key} → ${snakeKey}`);
-                }
+        
             } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                 // Skip RPC proxy objects
                 if (value._rintf) {
@@ -89,9 +87,6 @@ export function convertToCamelCase(service) {
             if (typeof value === 'function') {
                 // Use camelCase key for function
                 result[camelKey] = value;
-                if (camelKey !== key) {
-                    console.debug(`🔄 Converted method: ${key} → ${camelKey}`);
-                }
             } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                 // Skip RPC proxy objects
                 if (value._rintf) {

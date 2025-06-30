@@ -70,6 +70,29 @@ deno run --allow-net --allow-read --allow-env test/deno/streaming-test.js
 - Content-Type is set to `application/x-ndjson` for streaming responses
 - Real-time streaming without buffering all data first
 
+### `jwt-auth-test.js` (NEW)
+Tests for the complete JWT authentication workflow with protected services:
+- Server startup and JWT token generation
+- JWT token parsing and user context extraction
+- Protected service access with role-based authorization
+- Cross-workspace authentication and access control
+- Invalid token handling and fallback to anonymous users
+- Multi-user HTTP API authentication
+
+Run with:
+```bash
+deno run --allow-net --allow-read --allow-env test/deno/jwt-auth-test.js
+```
+
+**What the JWT Authentication Tests Verify:**
+- JWT tokens are properly generated with user/workspace/role information
+- HTTP requests with Bearer tokens extract user context correctly
+- Protected services receive authenticated user context with proper `user.id`, `user.email`, `user.roles`, and `user.scopes`
+- Role-based access control works (e.g., admin functions require admin role)
+- Cross-workspace authentication preserves workspace isolation
+- Invalid/malformed tokens gracefully fall back to anonymous users
+- Anonymous access still works when no token is provided
+
 ### `debug-asgi.js`
 Debug utilities and helpers for ASGI testing.
 
@@ -83,6 +106,7 @@ deno run --allow-net --allow-read --allow-env test/deno/asgi-tests.js
 deno run --allow-net --allow-read --allow-env test/deno/simple-asgi-test.js
 deno run --allow-net --allow-read --allow-env test/deno/context-injection-test.js
 deno run --allow-net --allow-read --allow-env test/deno/streaming-test.js
+deno run --allow-net --allow-read --allow-env test/deno/jwt-auth-test.js
 
 # Or run from the project root via npm
 npm run test:deno  # If configured in package.json
@@ -101,6 +125,7 @@ Each test runs on different ports to avoid conflicts:
 - `simple-asgi-test.js`: port 9620
 - `context-injection-test.js`: ports 9700-9705
 - `streaming-test.js`: ports 9800-9803
+- `jwt-auth-test.js`: ports 9810-9812
 
 ## Context Injection Fix
 

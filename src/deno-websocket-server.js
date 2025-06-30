@@ -376,38 +376,104 @@ class HyphaServiceProxy {
     }
 
     /**
-     * Create user context for requests
+     * Create user context for requests with proper JWT token parsing
+     * When no auth token is provided, creates anonymous workspace and user context
      */
-    createUserContext(authToken = null) {
+    createUserContext(authToken = null, overrides = {}) {
         if (authToken) {
             try {
                 // Remove 'Bearer ' prefix if present
                 const token = authToken.replace(/^Bearer\s+/, '');
                 
-                // Parse the token to get user info
-                const userInfo = this.hyphaCore.parseToken(token);
+                // Parse the token to get user info - this is just decoding, not verifying
+                const tokenPayload = this.parseJwtPayload(token);
+                
+                // Extract user info from JWT payload
+                const userInfo = {
+                    id: tokenPayload.sub || "anonymous",
+                    email: tokenPayload.email || "",
+                    roles: tokenPayload.roles || [],
+                    scopes: Array.isArray(tokenPayload.scope) ? tokenPayload.scope : 
+                           (tokenPayload.scope ? tokenPayload.scope.split(' ') : []),
+                    is_anonymous: false
+                };
+                
+                // Use workspace and client_id from token, with overrides
+                const workspace = overrides.workspace || tokenPayload.workspace || "default";
+                const clientId = overrides.client_id || tokenPayload.client_id || `http-client-${userInfo.id}`;
+                
+                console.debug(`🔐 Authenticated HTTP request: user=${userInfo.id}, workspace=${workspace}, from=${workspace}/${clientId}, to=${workspace}/http-server`);
                 
                 return {
-                    ws: "default",
-                    from: `default/http-client-${userInfo.id}`,
-                    user: userInfo
+                    ws: workspace,
+                    from: `${workspace}/${clientId}`,
+                    to: `${workspace}/http-server`,
+                    user: userInfo,
+                    token: tokenPayload
                 };
             } catch (error) {
-                console.warn('Invalid auth token, using anonymous context:', error.message);
+                console.warn('Invalid auth token, falling back to anonymous context:', error.message);
             }
         }
         
-        // Return anonymous context
+        // Create anonymous workspace and user context for unauthenticated requests
+        const workspace = overrides.workspace || "default";
+        const clientId = overrides.client_id || this.generateAnonymousClientId();
+        
+        const anonymousContext = {
+            ws: workspace,
+            from: `${workspace}/${clientId}`,
+            to: `${workspace}/http-server`,
+            user: this.createAnonymousUser(),
+            isAnonymous: true
+        };
+        
+        console.debug(`👻 Anonymous HTTP request: workspace=${workspace}, from=${workspace}/${clientId}, to=${workspace}/http-server`);
+        
+        return anonymousContext;
+    }
+
+    /**
+     * Generate a unique client ID for anonymous HTTP requests
+     */
+    generateAnonymousClientId() {
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substr(2, 6);
+        return `anonymous-http-${timestamp}-${random}`;
+    }
+
+    /**
+     * Create anonymous user object with default properties
+     */
+    createAnonymousUser() {
         return {
-            ws: "default",
-            from: "default/anonymous-http-client",
-            user: {
-                id: "anonymous",
-                is_anonymous: true,
-                email: "anonymous@localhost",
-                roles: []
+            id: "anonymous",
+            is_anonymous: true,
+            email: "anonymous@localhost",
+            roles: ["anonymous"], // Add anonymous role for access control
+            scopes: ["read"], // Default read-only access for anonymous users
+            permissions: {
+                read: true,
+                write: false,
+                admin: false
             }
         };
+    }
+
+    /**
+     * Parse JWT payload without verification (for extracting user context info)
+     */
+    parseJwtPayload(token) {
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        } catch (error) {
+            throw new Error(`Failed to parse JWT payload: ${error.message}`);
+        }
     }
 
     /**
@@ -430,50 +496,137 @@ class HyphaServiceProxy {
 
     /**
      * Get workspace interface by accessing workspace manager with proper context
+     * @param {string} workspace - Target workspace 
+     * @param {string} authToken - Authorization token (optional)
+     * @param {object} contextOverrides - Override context fields (optional)
      */
-    async getWorkspaceInterface(workspace, authToken) {
+    async getWorkspaceInterface(workspace, authToken, contextOverrides = {}) {
         if (!this.hyphaCore || !this.hyphaCore.workspaceManager) {
             throw new Error('Workspace manager not available');
         }
         
-        // Create proper context based on authentication
-        const context = this.createUserContext(authToken);
+        // Create proper context based on authentication and extracted token info
+        const tokenOverrides = { ...contextOverrides };
+        if (workspace) {
+            tokenOverrides.workspace = workspace;
+        }
+        
+        const context = this.createUserContext(authToken, tokenOverrides);
         
         // Get default service functions
         const defaultService = this.hyphaCore.workspaceManager.getDefaultService();
         
-        // Create a version where ALL default service functions have context bound consistently
-        const boundDefaultService = {};
+        // Check if the service requires context injection
+        const requiresContext = defaultService.config && defaultService.config.require_context;
         
-        // Bind context to all default service functions for consistency
-        for (const [key, value] of Object.entries(defaultService)) {
-            if (typeof value === 'function') {
-                // we should ensure context is always the last argument
-                // we should make sure the function takes at least one argument
-                // Bind context to all function properties
-                const boundFunction = (...args) => value(...args, context);
-                
-                // Add both snake_case and camelCase versions
-                boundDefaultService[key] = boundFunction;
-                
-                // Add camelCase version if different from original
-                const camelKey = this.snakeToCamel(key);
-                if (camelKey !== key) {
-                    boundDefaultService[camelKey] = boundFunction;
+        if (requiresContext) {
+            // Use the context injection logic similar to workspace.js
+            return this.wrapServiceWithContext(defaultService, context);
+        } else {
+            // Just add camelCase versions without context injection
+            return this.addCamelCaseVersions(defaultService);
+        }
+    }
+
+    /**
+     * Wrap service methods with context injection (similar to _wrapLocalServiceMethods in workspace.js)
+     */
+    wrapServiceWithContext(service, context) {
+        const getContextForCall = () => context;
+        
+        // Recursively wrap function properties
+        const wrapFunctions = (obj, path = '') => {
+            const wrapped = {};
+            
+            for (const [key, value] of Object.entries(obj)) {
+                if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
+                    // Skip metadata fields but add camelCase versions
+                    wrapped[key] = value;
+                    const camelKey = this.snakeToCamel(key);
+                    if (camelKey !== key) {
+                        wrapped[camelKey] = value;
+                    }
+                } else if (typeof value === 'function') {
+                    // Wrap function to inject context
+                    const wrappedFunction = (...args) => {
+                        // Check if the last argument looks like a context object
+                        const lastArg = args[args.length - 1];
+                        const hasContext = lastArg && 
+                            typeof lastArg === 'object' && 
+                            !Array.isArray(lastArg) &&
+                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg || 'to' in lastArg);
+                        
+                        if (!hasContext) {
+                            // Inject context as the last argument
+                            args.push(getContextForCall());
+                        } else {
+                            // Merge with existing context, ensuring all required fields are set
+                            const baseContext = getContextForCall();
+                            const mergedContext = {
+                                ...lastArg,  // Preserve existing context properties
+                                ws: lastArg.ws || baseContext.ws,
+                                user: lastArg.user || baseContext.user,
+                                from: lastArg.from || baseContext.from,
+                                to: lastArg.to || baseContext.to
+                            };
+                            args[args.length - 1] = mergedContext;
+                        }
+                        
+                        return value.apply(obj, args);
+                    };
+                    
+                    // Add both snake_case and camelCase versions
+                    wrapped[key] = wrappedFunction;
+                    const camelKey = this.snakeToCamel(key);
+                    if (camelKey !== key) {
+                        wrapped[camelKey] = wrappedFunction;
+                    }
+                } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                    // Don't wrap _rintf objects as they're RPC proxies
+                    if (value._rintf) {
+                        wrapped[key] = value;
+                        const camelKey = this.snakeToCamel(key);
+                        if (camelKey !== key) {
+                            wrapped[camelKey] = value;
+                        }
+                    } else {
+                        // Recursively wrap nested objects
+                        wrapped[key] = wrapFunctions(value, `${path}.${key}`);
+                    }
+                } else {
+                    // Copy other values as-is and add camelCase versions
+                    wrapped[key] = value;
+                    const camelKey = this.snakeToCamel(key);
+                    if (camelKey !== key) {
+                        wrapped[camelKey] = value;
+                    }
                 }
-            } else {
-                // Keep non-function properties as-is
-                boundDefaultService[key] = value;
-                
-                // Add camelCase version for non-function properties too if different
-                const camelKey = this.snakeToCamel(key);
-                if (camelKey !== key) {
-                    boundDefaultService[camelKey] = value;
-                }
+            }
+            
+            return wrapped;
+        };
+        
+        return wrapFunctions(service);
+    }
+
+    /**
+     * Add camelCase versions of methods without context injection
+     */
+    addCamelCaseVersions(service) {
+        const enhanced = {};
+        
+        for (const [key, value] of Object.entries(service)) {
+            // Add original key
+            enhanced[key] = value;
+            
+            // Add camelCase version if different from original
+            const camelKey = this.snakeToCamel(key);
+            if (camelKey !== key) {
+                enhanced[camelKey] = value;
             }
         }
         
-        return boundDefaultService;
+        return enhanced;
     }
 
     /**
@@ -685,7 +838,7 @@ class HyphaServiceProxy {
         try {
             const authToken = this.extractAuthToken(request);
             
-            // Get workspace interface with proper context
+            // Get workspace interface with proper context for the specified workspace
             const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
             const services = await workspaceInterface.listServices({});
             
@@ -713,7 +866,7 @@ class HyphaServiceProxy {
         try {
             const authToken = this.extractAuthToken(request);
             
-            // Get workspace interface with proper context
+            // Get workspace interface with proper context for the specified workspace
             const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
             
             // Handle special case for 'ws' service
@@ -784,9 +937,8 @@ class HyphaServiceProxy {
             delete functionKwargs._mode;
             
             const authToken = this.extractAuthToken(request);
-            const context = this.createUserContext(authToken);
             
-            // Get workspace interface with proper context
+            // Get workspace interface with proper context for the specified workspace
             const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
             
             let service;
@@ -904,7 +1056,7 @@ class HyphaServiceProxy {
             const authToken = this.extractAuthToken(request);
             const cookies = this.extractCookies(request);
             
-            // Get workspace interface with proper context  
+            // Get workspace interface with proper context for the specified workspace  
             const workspaceInterface = await this.getWorkspaceInterface(workspace, authToken);
             
             // Get service info to check if it's an ASGI service
