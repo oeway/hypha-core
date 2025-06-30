@@ -691,6 +691,34 @@ export class Workspace {
                 to: `${workspace}/workspace-service`
             };
         };
+
+        // More specific context detection to avoid false positives
+        const isContextObject = (obj) => {
+            if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+                return false;
+            }
+            
+            // A proper context object should have workspace and user info
+            const hasWorkspaceInfo = 'ws' in obj;
+            const hasUserInfo = 'user' in obj;
+            const hasRoutingInfo = ('from' in obj || 'to' in obj);
+            
+            // Definitely a context object if it has the core context properties
+            if ((hasWorkspaceInfo || hasUserInfo) && hasRoutingInfo) {
+                return true;
+            }
+            
+            // Also check for the legacy context detection for compatibility
+            const hasLegacyContextProps = ('ws' in obj || 'user' in obj || 'from' in obj || 'to' in obj);
+            
+            // Exclude obvious business data patterns but be more permissive
+            const hasObviousBusinessData = ('appId' in obj && 'lines' in obj) || // Specific pattern from the issue
+                                          ('config' in obj && 'data' in obj) ||
+                                          ('params' in obj && 'options' in obj);
+            
+            // Use legacy detection if no obvious business data
+            return hasLegacyContextProps && !hasObviousBusinessData;
+        };
         
         // Recursively wrap function properties
         const wrapFunctions = (obj, path = '') => {
@@ -705,19 +733,19 @@ export class Workspace {
                     wrapped[key] = (...args) => {
                         // Check if the last argument looks like a context object
                         const lastArg = args[args.length - 1];
-                        const hasContext = lastArg && 
-                            typeof lastArg === 'object' && 
-                            !Array.isArray(lastArg) &&
-                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg || 'to' in lastArg);
+                        const hasContext = isContextObject(lastArg);
                         
                         if (!hasContext) {
                             // Inject context as the last argument
-                            args.push(getContextForCall());
+                            const context = getContextForCall();
+                            args.push(context);
                         } else {
                             // Merge with existing context, ensuring all required fields are set
                             const baseContext = getContextForCall();
                             const mergedContext = {
-                                ...lastArg,  // Preserve existing context properties
+                                ...baseContext,  // Base context first
+                                ...lastArg,      // Then overlay existing context
+                                // Ensure critical fields are not overwritten by invalid data
                                 ws: lastArg.ws || baseContext.ws,
                                 user: lastArg.user || baseContext.user,
                                 from: lastArg.from || baseContext.from,
@@ -1389,6 +1417,34 @@ export class Workspace {
         
         const getContextForCall = () => userContext;
         
+        // More specific context detection to avoid false positives
+        const isContextObject = (obj) => {
+            if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+                return false;
+            }
+            
+            // A proper context object should have workspace and user info
+            const hasWorkspaceInfo = 'ws' in obj;
+            const hasUserInfo = 'user' in obj;
+            const hasRoutingInfo = ('from' in obj || 'to' in obj);
+            
+            // Definitely a context object if it has the core context properties
+            if ((hasWorkspaceInfo || hasUserInfo) && hasRoutingInfo) {
+                return true;
+            }
+            
+            // Also check for the legacy context detection for compatibility
+            const hasLegacyContextProps = ('ws' in obj || 'user' in obj || 'from' in obj || 'to' in obj);
+            
+            // Exclude obvious business data patterns but be more permissive
+            const hasObviousBusinessData = ('appId' in obj && 'lines' in obj) || // Specific pattern from the issue
+                                          ('config' in obj && 'data' in obj) ||
+                                          ('params' in obj && 'options' in obj);
+            
+            // Use legacy detection if no obvious business data
+            return hasLegacyContextProps && !hasObviousBusinessData;
+        };
+        
         // Recursively wrap function properties
         const wrapFunctions = (obj, path = '') => {
             const wrapped = {};
@@ -1402,19 +1458,19 @@ export class Workspace {
                     wrapped[key] = (...args) => {
                         // Check if the last argument looks like a context object
                         const lastArg = args[args.length - 1];
-                        const hasContext = lastArg && 
-                            typeof lastArg === 'object' && 
-                            !Array.isArray(lastArg) &&
-                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg || 'to' in lastArg);
+                        const hasContext = isContextObject(lastArg);
                         
                         if (!hasContext) {
                             // Inject context as the last argument
-                            args.push(getContextForCall());
+                            const context = getContextForCall();
+                            args.push(context);
                         } else {
                             // Merge with existing context, ensuring all required fields are set
                             const baseContext = getContextForCall();
                             const mergedContext = {
-                                ...lastArg,  // Preserve existing context properties
+                                ...baseContext,  // Base context first
+                                ...lastArg,      // Then overlay existing context
+                                // Ensure critical fields are not overwritten by invalid data
                                 ws: lastArg.ws || baseContext.ws,
                                 user: lastArg.user || baseContext.user,
                                 from: lastArg.from || baseContext.from,

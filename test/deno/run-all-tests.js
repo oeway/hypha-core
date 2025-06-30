@@ -73,19 +73,18 @@ class DenoTestSuite {
         console.log('=' .repeat(60));
         
         const testFiles = [
-            { filename: 'simple-asgi-test.js', description: 'Simple ASGI Test' },
-            { filename: 'context-injection-test.js', description: 'Context Injection Tests' },
-            { filename: 'streaming-test.js', description: 'Async Generator Streaming Tests' },
-            { filename: 'jwt-auth-test.js', description: 'JWT Authentication Tests' },
-            // Note: asgi-tests.js is commented out because it takes longer and might conflict
-            // { filename: 'asgi-tests.js', description: 'Comprehensive ASGI Tests' },
+            'simple-asgi-test.js',
+            'context-injection-test.js', 
+            'streaming-test.js',
+            'jwt-auth-test.js',
+            'parameter-regression-test.js'
         ];
 
         const results = [];
         
-        for (const { filename, description } of testFiles) {
-            const success = await this.runTestFile(filename, description);
-            results.push({ filename, description, success });
+        for (const filename of testFiles) {
+            const success = await this.runTestFile(filename, filename);
+            results.push({ filename, success });
             
             // Add a small delay between tests to ensure ports are freed
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -98,7 +97,7 @@ class DenoTestSuite {
         
         for (const result of results) {
             const status = result.success ? '✅ PASSED' : '❌ FAILED';
-            console.log(`${status} - ${result.description}`);
+            console.log(`${status} - ${result.filename}`);
         }
         
         const totalFiles = results.length;

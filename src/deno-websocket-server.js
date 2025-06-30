@@ -380,57 +380,50 @@ class HyphaServiceProxy {
      * When no auth token is provided, creates anonymous workspace and user context
      */
     createUserContext(authToken = null, overrides = {}) {
+        let userInfo = this.createAnonymousUser();
+        let tokenPayload = null;
+        
         if (authToken) {
             try {
-                // Remove 'Bearer ' prefix if present
-                const token = authToken.replace(/^Bearer\s+/, '');
-                
-                // Parse the token to get user info - this is just decoding, not verifying
-                const tokenPayload = this.parseJwtPayload(token);
-                
-                // Extract user info from JWT payload
-                const userInfo = {
-                    id: tokenPayload.sub || "anonymous",
-                    email: tokenPayload.email || "",
-                    roles: tokenPayload.roles || [],
-                    scopes: Array.isArray(tokenPayload.scope) ? tokenPayload.scope : 
-                           (tokenPayload.scope ? tokenPayload.scope.split(' ') : []),
-                    is_anonymous: false
-                };
-                
-                // Use workspace and client_id from token, with overrides
-                const workspace = overrides.workspace || tokenPayload.workspace || "default";
-                const clientId = overrides.client_id || tokenPayload.client_id || `http-client-${userInfo.id}`;
-                
-                console.debug(`🔐 Authenticated HTTP request: user=${userInfo.id}, workspace=${workspace}, from=${workspace}/${clientId}, to=${workspace}/http-server`);
-                
-                return {
-                    ws: workspace,
-                    from: `${workspace}/${clientId}`,
-                    to: `${workspace}/http-server`,
-                    user: userInfo,
-                    token: tokenPayload
-                };
+                tokenPayload = this.parseJwtPayload(authToken);
+                if (tokenPayload) {
+                    userInfo = {
+                        id: tokenPayload.sub || "anonymous",
+                        email: tokenPayload.email || "",
+                        roles: tokenPayload.roles || [],
+                        scopes: tokenPayload.scope ? tokenPayload.scope.split(' ') : []
+                    };
+                }
             } catch (error) {
                 console.warn('Invalid auth token, falling back to anonymous context:', error.message);
+                tokenPayload = null; // Ensure it's null on error
             }
         }
         
-        // Create anonymous workspace and user context for unauthenticated requests
-        const workspace = overrides.workspace || "default";
-        const clientId = overrides.client_id || this.generateAnonymousClientId();
+        // Use optional chaining and null-safe defaults
+        const workspace = overrides.workspace || tokenPayload?.workspace || "default";
+        const clientId = overrides.client_id || tokenPayload?.client_id || this.generateAnonymousClientId();
         
-        const anonymousContext = {
+        const context = {
             ws: workspace,
             from: `${workspace}/${clientId}`,
-            to: `${workspace}/http-server`,
-            user: this.createAnonymousUser(),
-            isAnonymous: true
+            to: overrides.to || `${workspace}/http-server`,
+            user: userInfo
         };
         
-        console.debug(`👻 Anonymous HTTP request: workspace=${workspace}, from=${workspace}/${clientId}, to=${workspace}/http-server`);
+        // Only add token payload if it exists and is valid
+        if (tokenPayload) {
+            context.token = tokenPayload;
+        }
         
-        return anonymousContext;
+        // Log context creation for debugging
+        if (authToken) {
+            console.debug(`🔐 Authenticated HTTP request: user=${userInfo.id}, workspace=${workspace}, from=${context.from}, to=${context.to}`);
+        } else {
+            console.debug(`👻 Anonymous HTTP request: workspace=${workspace}, from=${context.from}, to=${context.to}`);
+        }
+        
+        return context;
     }
 
     /**
@@ -465,15 +458,38 @@ class HyphaServiceProxy {
      */
     parseJwtPayload(token) {
         try {
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            return JSON.parse(jsonPayload);
+            // Remove 'Bearer ' prefix if present
+            const cleanToken = token.replace(/^Bearer\s+/, '');
+            
+            // Split the JWT into parts
+            const parts = cleanToken.split('.');
+            if (parts.length !== 3) {
+                throw new Error('Invalid JWT format');
+            }
+            
+            // Decode the payload (second part)
+            const payload = parts[1];
+            const decoded = this.base64UrlDecode(payload);
+            return JSON.parse(decoded);
         } catch (error) {
             throw new Error(`Failed to parse JWT payload: ${error.message}`);
         }
+    }
+
+    base64UrlDecode(base64Url) {
+        // Convert base64url to base64
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        
+        // Add padding if needed
+        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+        
+        // Decode base64
+        const decoded = atob(padded);
+        
+        // Convert to UTF-8
+        return decodeURIComponent(decoded.split('').map(function (c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
     }
 
     /**
@@ -683,19 +699,50 @@ class HyphaServiceProxy {
      * Extract query parameters and normalize values
      */
     extractQueryParams(url) {
-        const urlObj = new URL(url, 'http://localhost');
+        const urlObj = new URL(url);
         const params = {};
-        for (const [key, value] of urlObj.searchParams.entries()) {
-            // Normalize numbers similar to Python version
-            if (/^\d+$/.test(value)) {
-                params[key] = parseInt(value);
-            } else if (/^\d+\.\d+$/.test(value)) {
-                params[key] = parseFloat(value);
+        
+        for (const [key, value] of urlObj.searchParams) {
+            // Try to parse JSON if the value looks like JSON
+            if (this.looksLikeJson(value)) {
+                try {
+                    params[key] = JSON.parse(value);
+                } catch (error) {
+                    // If JSON parsing fails, keep as string
+                    params[key] = value;
+                }
             } else {
-                params[key] = value;
+                // Try to convert to appropriate type
+                params[key] = this.convertUrlParamType(value);
             }
         }
+        
         return params;
+    }
+
+    looksLikeJson(str) {
+        if (typeof str !== 'string') return false;
+        const trimmed = str.trim();
+        return (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+               (trimmed.startsWith('[') && trimmed.endsWith(']'));
+    }
+
+    convertUrlParamType(value) {
+        // Convert URL parameter strings to appropriate types
+        if (value === 'true') return true;
+        if (value === 'false') return false;
+        if (value === 'null') return null;
+        if (value === 'undefined') return undefined;
+        
+        // Try to convert to number if it looks like a number
+        if (/^-?\d+$/.test(value)) {
+            return parseInt(value, 10);
+        }
+        if (/^-?\d+\.\d+$/.test(value)) {
+            return parseFloat(value);
+        }
+        
+        return value; // Keep as string
     }
 
     /**
@@ -992,35 +1039,110 @@ class HyphaServiceProxy {
             // Call the function - context is already handled by getServiceAsUser if needed
             let result;
             
-            // For both workspace services and regular services with require_context,
-            // the context is already properly injected, so we can use the same calling logic
-            
-            // Try to extract parameter names from function signature  
+            // Smart parameter handling based on function signature and parameter structure
+            const parameterCount = func.length;
             const funcStr = func.toString();
-            const paramMatch = funcStr.match(/\(([^)]*)\)/);
-            
-            // Check if this is a wrapped function (contains ...args)
             const isWrappedFunction = funcStr.includes('...args');
+            const hasDestructuredParams = funcStr.includes('{') && funcStr.includes('}') && funcStr.includes('(');
             
-            if (isWrappedFunction) {
-                // For wrapped functions, pass all kwargs values as positional arguments
-                // The wrapper will handle context injection automatically
-                const args = Object.values(functionKwargs);
-                result = func(...args);
-            } else if (paramMatch && paramMatch[1].trim()) {
-                // Extract parameter names for regular functions
-                const params = paramMatch[1].split(',').map(p => p.trim().split('=')[0].trim());
-                
-                // Build argument array based on parameter names
-                const args = [];
-                for (const paramName of params) {
-                    args.push(functionKwargs[paramName]);
+            // For services that have been wrapped with context injection (from getServiceAsUser),
+            // we should pass the original HTTP parameters and let the wrapper handle context injection
+            if (isWrappedFunction && funcStr.includes('getContextForCall')) {
+                // This is a wrapped function that handles context injection
+                // Just pass the HTTP parameters as they were sent
+                if (Object.keys(functionKwargs).length === 0) {
+                    result = func();
+                } else if (Object.keys(functionKwargs).length === 1) {
+                    result = func(Object.values(functionKwargs)[0]);
+                } else {
+                    // Multiple parameters - pass as separate arguments
+                    result = func(...Object.values(functionKwargs));
                 }
-                
-                result = func(...args);
-            } else {
-                // Function has no parameters
+            } else if (parameterCount === 0) {
+                // Function expects no parameters
                 result = func();
+            } else if (isWrappedFunction) {
+                // Regular wrapped function (not context-wrapped)
+                if (Object.keys(functionKwargs).length === 1) {
+                    const singleKey = Object.keys(functionKwargs)[0];
+                    const singleValue = functionKwargs[singleKey];
+                    
+                    // For workspace service functions, extract parameter values by name
+                    if (serviceId === 'ws' && (singleKey === 'msg' || singleKey === 'message')) {
+                        result = func(singleValue);
+                    } else if (singleKey === 'config' || singleKey === 'params' || singleKey === 'options' || 
+                              (typeof singleValue === 'object' && singleValue !== null)) {
+                        result = func(singleValue);
+                    } else {
+                        result = func(singleValue);
+                    }
+                } else if (Object.keys(functionKwargs).length > 1) {
+                    // Multiple parameters - check if this is a known workspace service function
+                    if (serviceId === 'ws') {
+                        // For workspace service functions, try to match parameter names
+                        if (functionKey === 'echo' && functionKwargs.msg !== undefined) {
+                            result = func(functionKwargs.msg);
+                        } else if (functionKey === 'log' && functionKwargs.msg !== undefined) {
+                            result = func(functionKwargs.msg);
+                        } else if (functionKey === 'info' && functionKwargs.msg !== undefined) {
+                            result = func(functionKwargs.msg);
+                        } else if (functionKey === 'listServices') {
+                            result = func(functionKwargs);
+                        } else if (functionKey === 'getService') {
+                            result = func(functionKwargs.serviceId || functionKwargs.service_id, functionKwargs);
+                        } else {
+                            // Pass as object if function expects destructured params
+                            if (hasDestructuredParams || parameterCount === 1) {
+                                result = func(functionKwargs);
+                            } else {
+                                // Pass as separate arguments
+                                result = func(...Object.values(functionKwargs));
+                            }
+                        }
+                    } else {
+                        // For regular services - pass as object if function expects destructured params
+                        if (hasDestructuredParams || parameterCount === 1) {
+                            result = func(functionKwargs);
+                        } else {
+                            // Pass as separate arguments
+                            result = func(...Object.values(functionKwargs));
+                        }
+                    }
+                } else {
+                    // No parameters
+                    result = func();
+                }
+            } else if (parameterCount === 1) {
+                // Function expects exactly one parameter
+                if (Object.keys(functionKwargs).length === 0) {
+                    // No arguments provided
+                    result = func();
+                } else if (Object.keys(functionKwargs).length === 1) {
+                    // Single argument - pass the value directly
+                    result = func(Object.values(functionKwargs)[0]);
+                } else {
+                    // Multiple arguments but function expects one - pass as object
+                    result = func(functionKwargs);
+                }
+            } else {
+                // Function expects multiple parameters
+                // Try to extract parameter names from function signature
+                const paramMatch = funcStr.match(/\(([^)]*)\)/);
+                
+                if (paramMatch && paramMatch[1].trim()) {
+                    // Extract parameter names and match them to provided arguments
+                    const params = paramMatch[1].split(',').map(p => p.trim().split('=')[0].trim());
+                    const args = [];
+                    
+                    for (const paramName of params) {
+                        args.push(functionKwargs[paramName]);
+                    }
+                    
+                    result = func(...args);
+                } else {
+                    // Fallback: pass all values as positional arguments
+                    result = func(...Object.values(functionKwargs));
+                }
             }
             
             // Check if result is an async generator first (before awaiting)
