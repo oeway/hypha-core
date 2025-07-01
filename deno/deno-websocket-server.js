@@ -749,7 +749,7 @@ class HyphaServiceProxy {
      * Extract request body based on content type
      */
     async extractRequestBody(request) {
-        const contentType = request.headers.get('content-type') || 'application/json';
+        const contentType = request.headers.get('content-type') || '';
         
         if (request.method === 'GET') {
             return {};
@@ -757,14 +757,32 @@ class HyphaServiceProxy {
         
         if (request.method === 'POST') {
             const body = await request.text();
-            if (!body) return {};
+            if (!body || body.trim() === '') return {};
             
-            if (contentType.includes('application/json')) {
-                return JSON.parse(body);
+            // Try to parse as JSON if content-type suggests JSON or if no content-type specified
+            if (contentType.includes('application/json') || contentType === '') {
+                try {
+                    return JSON.parse(body);
+                } catch (error) {
+                    console.warn('Failed to parse POST body as JSON:', error.message, 'Body:', body);
+                    // If JSON parsing fails, treat as empty object for function calls
+                    return {};
+                }
             }
-            // Note: MessagePack support would need additional library
-            // For now, only support JSON
-            throw new Error(`Unsupported content-type: ${contentType}`);
+            
+            // Handle form-encoded data
+            if (contentType.includes('application/x-www-form-urlencoded')) {
+                const params = new URLSearchParams(body);
+                const result = {};
+                for (const [key, value] of params) {
+                    result[key] = this.convertUrlParamType(value);
+                }
+                return result;
+            }
+            
+            // For other content types, return empty object for now
+            console.warn(`Unsupported content-type: ${contentType}, treating as empty request body`);
+            return {};
         }
         
         throw new Error(`Unsupported request method: ${request.method}`);
@@ -1039,110 +1057,21 @@ class HyphaServiceProxy {
             // Call the function - context is already handled by getServiceAsUser if needed
             let result;
             
-            // Smart parameter handling based on function signature and parameter structure
-            const parameterCount = func.length;
-            const funcStr = func.toString();
-            const isWrappedFunction = funcStr.includes('...args');
-            const hasDestructuredParams = funcStr.includes('{') && funcStr.includes('}') && funcStr.includes('(');
+            // Simplified parameter handling - since getServiceAsUser already handles context injection,
+            // we just need to pass the HTTP parameters appropriately
+            const paramCount = Object.keys(functionKwargs).length;
             
-            // For services that have been wrapped with context injection (from getServiceAsUser),
-            // we should pass the original HTTP parameters and let the wrapper handle context injection
-            if (isWrappedFunction && funcStr.includes('getContextForCall')) {
-                // This is a wrapped function that handles context injection
-                // Just pass the HTTP parameters as they were sent
-                if (Object.keys(functionKwargs).length === 0) {
-                    result = func();
-                } else if (Object.keys(functionKwargs).length === 1) {
-                    result = func(Object.values(functionKwargs)[0]);
-                } else {
-                    // Multiple parameters - pass as separate arguments
-                    result = func(...Object.values(functionKwargs));
-                }
-            } else if (parameterCount === 0) {
-                // Function expects no parameters
+            if (paramCount === 0) {
+                // No parameters provided
                 result = func();
-            } else if (isWrappedFunction) {
-                // Regular wrapped function (not context-wrapped)
-                if (Object.keys(functionKwargs).length === 1) {
-                    const singleKey = Object.keys(functionKwargs)[0];
-                    const singleValue = functionKwargs[singleKey];
-                    
-                    // For workspace service functions, extract parameter values by name
-                    if (serviceId === 'ws' && (singleKey === 'msg' || singleKey === 'message')) {
-                        result = func(singleValue);
-                    } else if (singleKey === 'config' || singleKey === 'params' || singleKey === 'options' || 
-                              (typeof singleValue === 'object' && singleValue !== null)) {
-                        result = func(singleValue);
-                    } else {
-                        result = func(singleValue);
-                    }
-                } else if (Object.keys(functionKwargs).length > 1) {
-                    // Multiple parameters - check if this is a known workspace service function
-                    if (serviceId === 'ws') {
-                        // For workspace service functions, try to match parameter names
-                        if (functionKey === 'echo' && functionKwargs.msg !== undefined) {
-                            result = func(functionKwargs.msg);
-                        } else if (functionKey === 'log' && functionKwargs.msg !== undefined) {
-                            result = func(functionKwargs.msg);
-                        } else if (functionKey === 'info' && functionKwargs.msg !== undefined) {
-                            result = func(functionKwargs.msg);
-                        } else if (functionKey === 'listServices') {
-                            result = func(functionKwargs);
-                        } else if (functionKey === 'getService') {
-                            result = func(functionKwargs.serviceId || functionKwargs.service_id, functionKwargs);
-                        } else {
-                            // Pass as object if function expects destructured params
-                            if (hasDestructuredParams || parameterCount === 1) {
-                                result = func(functionKwargs);
-                            } else {
-                                // Pass as separate arguments
-                                result = func(...Object.values(functionKwargs));
-                            }
-                        }
-                    } else {
-                        // For regular services - pass as object if function expects destructured params
-                        if (hasDestructuredParams || parameterCount === 1) {
-                            result = func(functionKwargs);
-                        } else {
-                            // Pass as separate arguments
-                            result = func(...Object.values(functionKwargs));
-                        }
-                    }
-                } else {
-                    // No parameters
-                    result = func();
-                }
-            } else if (parameterCount === 1) {
-                // Function expects exactly one parameter
-                if (Object.keys(functionKwargs).length === 0) {
-                    // No arguments provided
-                    result = func();
-                } else if (Object.keys(functionKwargs).length === 1) {
-                    // Single argument - pass the value directly
-                    result = func(Object.values(functionKwargs)[0]);
-                } else {
-                    // Multiple arguments but function expects one - pass as object
-                    result = func(functionKwargs);
-                }
+            } else if (paramCount === 1) {
+                // Single parameter - pass the value directly
+                const singleValue = Object.values(functionKwargs)[0];
+                result = func(singleValue);
             } else {
-                // Function expects multiple parameters
-                // Try to extract parameter names from function signature
-                const paramMatch = funcStr.match(/\(([^)]*)\)/);
-                
-                if (paramMatch && paramMatch[1].trim()) {
-                    // Extract parameter names and match them to provided arguments
-                    const params = paramMatch[1].split(',').map(p => p.trim().split('=')[0].trim());
-                    const args = [];
-                    
-                    for (const paramName of params) {
-                        args.push(functionKwargs[paramName]);
-                    }
-                    
-                    result = func(...args);
-                } else {
-                    // Fallback: pass all values as positional arguments
-                    result = func(...Object.values(functionKwargs));
-                }
+                // Multiple parameters - pass as a single object
+                // This works for most service functions that expect a params object
+                result = func(functionKwargs);
             }
             
             // Check if result is an async generator first (before awaiting)
