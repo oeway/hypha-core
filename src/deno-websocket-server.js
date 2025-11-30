@@ -529,101 +529,19 @@ class HyphaServiceProxy {
         
         const context = this.createUserContext(authToken, tokenOverrides);
         
-        // Get default service functions
-        const defaultService = this.hyphaCore.workspaceManager.getDefaultService();
+        // Use getServiceAsUser to get the default workspace service with proper context handling
+        // This ensures context injection is handled correctly by hypha-core's built-in logic
+        const defaultService = await this.hyphaCore.workspaceManager.getServiceAsUser(
+            'ws', 
+            { mode: 'default' },
+            context
+        );
         
-        // Check if the service requires context injection
-        const requiresContext = defaultService.config && defaultService.config.require_context;
-        
-        if (requiresContext) {
-            // Use the context injection logic similar to workspace.js
-            return this.wrapServiceWithContext(defaultService, context);
-        } else {
-            // Just add camelCase versions without context injection
-            return this.addCamelCaseVersions(defaultService);
-        }
+        // Add camelCase versions for JavaScript clients
+        return this.addCamelCaseVersions(defaultService);
     }
 
-    /**
-     * Wrap service methods with context injection (similar to _wrapLocalServiceMethods in workspace.js)
-     */
-    wrapServiceWithContext(service, context) {
-        const getContextForCall = () => context;
-        
-        // Recursively wrap function properties
-        const wrapFunctions = (obj, path = '') => {
-            const wrapped = {};
-            
-            for (const [key, value] of Object.entries(obj)) {
-                if (['id', 'name', 'description', 'config', 'app_id'].includes(key)) {
-                    // Skip metadata fields but add camelCase versions
-                    wrapped[key] = value;
-                    const camelKey = this.snakeToCamel(key);
-                    if (camelKey !== key) {
-                        wrapped[camelKey] = value;
-                    }
-                } else if (typeof value === 'function') {
-                    // Wrap function to inject context
-                    const wrappedFunction = (...args) => {
-                        // Check if the last argument looks like a context object
-                        const lastArg = args[args.length - 1];
-                        const hasContext = lastArg && 
-                            typeof lastArg === 'object' && 
-                            !Array.isArray(lastArg) &&
-                            ('ws' in lastArg || 'user' in lastArg || 'from' in lastArg || 'to' in lastArg);
-                        
-                        if (!hasContext) {
-                            // Inject context as the last argument
-                            args.push(getContextForCall());
-                        } else {
-                            // Merge with existing context, ensuring all required fields are set
-                            const baseContext = getContextForCall();
-                            const mergedContext = {
-                                ...lastArg,  // Preserve existing context properties
-                                ws: lastArg.ws || baseContext.ws,
-                                user: lastArg.user || baseContext.user,
-                                from: lastArg.from || baseContext.from,
-                                to: lastArg.to || baseContext.to
-                            };
-                            args[args.length - 1] = mergedContext;
-                        }
-                        
-                        return value.apply(obj, args);
-                    };
-                    
-                    // Add both snake_case and camelCase versions
-                    wrapped[key] = wrappedFunction;
-                    const camelKey = this.snakeToCamel(key);
-                    if (camelKey !== key) {
-                        wrapped[camelKey] = wrappedFunction;
-                    }
-                } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                    // Don't wrap _rintf objects as they're RPC proxies
-                    if (value._rintf) {
-                        wrapped[key] = value;
-                        const camelKey = this.snakeToCamel(key);
-                        if (camelKey !== key) {
-                            wrapped[camelKey] = value;
-                        }
-                    } else {
-                        // Recursively wrap nested objects
-                        wrapped[key] = wrapFunctions(value, `${path}.${key}`);
-                    }
-                } else {
-                    // Copy other values as-is and add camelCase versions
-                    wrapped[key] = value;
-                    const camelKey = this.snakeToCamel(key);
-                    if (camelKey !== key) {
-                        wrapped[camelKey] = value;
-                    }
-                }
-            }
-            
-            return wrapped;
-        };
-        
-        return wrapFunctions(service);
-    }
+
 
     /**
      * Add camelCase versions of methods without context injection
@@ -1128,17 +1046,18 @@ class HyphaServiceProxy {
                 // For workspace service, use the workspace interface itself
                 service = workspaceInterface;
             } else {
-                service = await workspaceInterface.getService(serviceId, { mode });
+                // Create user context for the service call
+                const userContext = this.createUserContext(authToken, { workspace });
+                
+                // Use getServiceAsUser which handles context injection internally based on require_context
+                service = await this.hyphaCore.workspaceManager.getServiceAsUser(
+                    serviceId, 
+                    { mode },
+                    userContext
+                );
                 
                 if (!service) {
                     return this.createErrorResponse(404, `Service ${serviceId} not found`);
-                }
-                
-                // Only wrap with context if the service explicitly requires it
-                const requiresContext = service.config && service.config.require_context;
-                if (requiresContext) {
-                    const context = this.createUserContext(authToken, { workspace });
-                    service = this.wrapServiceWithContext(service, context);
                 }
             }
             
