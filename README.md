@@ -1678,6 +1678,254 @@ hyphaWebsocketClient.setupLocalClient({enable_execution: true}).then(async (api)
 
 This integration system allows you to create complex, distributed applications where different components can run in isolation while maintaining seamless communication through the Hypha RPC system.
 
+## Mounting Existing Workers and Iframes
+
+Hypha Core provides **simple, direct APIs** for mounting existing web workers and iframes without needing the ImJoy plugin format. This is perfect for integrating notebook environments (like Pyodide), custom workers, or existing web applications.
+
+### `mountWorker(worker, config)` - Mount a Web Worker
+
+Mount an existing Web Worker instance to Hypha Core with automatic RPC setup and bidirectional communication.
+
+#### Basic Usage
+
+```javascript
+import { HyphaCore } from 'hypha-core';
+
+// Start Hypha Core
+const server = new HyphaCore({ port: 9527 });
+await server.start();
+
+// Create a web worker
+const worker = new Worker('my-worker.js');
+
+// Mount it to Hypha Core
+await server.mountWorker(worker, {
+    workspace: 'default',           // Optional: defaults to 'default'
+    client_id: 'my-worker',         // Optional: auto-generated if not provided
+    timeout: 60000                  // Optional: connection timeout (default: 60s)
+});
+
+// Worker is now connected and ready for RPC communication!
+```
+
+#### Pyodide/Python Worker Example
+
+```javascript
+// Mount a Pyodide worker with Python code to execute
+const worker = new Worker('pyodide-worker.js');
+
+await server.mountWorker(worker, {
+    workspace: 'default',
+    client_id: 'python-notebook',
+    config: {
+        name: 'My Notebook',
+        scripts: [{
+            lang: 'python',
+            content: `
+print("Hello from Python!")
+
+# Access Hypha services from Python
+services = await api.list_services({})
+print(f"Found {len(services)} services")
+
+# Get a JavaScript service and call it
+demo = await api.get_service("demo-service")
+result = await demo.greet("Python")
+print(f"Response: {result}")
+`
+        }]
+    }
+});
+```
+
+#### Worker Script Structure
+
+Your worker script should use `hypha-rpc` to connect:
+
+```javascript
+// my-worker.js
+importScripts("https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.84/dist/hypha-rpc-websocket.min.js");
+
+// Start Pyodide or other environment
+loadPyodide().then(async (pyodide) => {
+    // Install hypha-rpc
+    await pyodide.loadPackage("micropip");
+    const micropip = pyodide.pyimport("micropip");
+    await micropip.install('hypha-rpc==0.20.84');
+
+    // Signal ready to receive initialization
+    self.postMessage({ type: "hyphaClientReady" });
+
+    // Set up the local client (will block until initializeHyphaClient arrives)
+    await pyodide.runPythonAsync(`
+from hypha_rpc import setup_local_client
+
+async def execute(server, config):
+    # Your Python code execution logic
+    print('Executing:', config["name"])
+    for script in config["scripts"]:
+        exec(script["content"], {'api': server})
+
+server = await setup_local_client(enable_execution=False, on_ready=execute)
+    `);
+});
+```
+
+### `mountIframe(iframe, config)` - Mount an Iframe
+
+Mount an existing iframe element to Hypha Core for bidirectional RPC communication.
+
+#### Basic Usage
+
+```javascript
+// Create an iframe element
+const iframe = document.createElement('iframe');
+iframe.src = 'my-app.html';
+document.body.appendChild(iframe);
+
+// Wait for iframe to load
+await new Promise(resolve => iframe.onload = resolve);
+
+// Mount it to Hypha Core
+await server.mountIframe(iframe, {
+    workspace: 'default',
+    client_id: 'my-iframe-app'
+});
+
+// Iframe is now connected!
+```
+
+#### Example: Mounting an Existing Div with Iframe
+
+```javascript
+// Mount an iframe inside an existing div
+const container = document.getElementById('app-container');
+
+// Create iframe programmatically
+const iframe = document.createElement('iframe');
+iframe.src = '/apps/data-viewer.html';
+iframe.style.width = '100%';
+iframe.style.height = '600px';
+container.appendChild(iframe);
+
+// Mount to Hypha Core
+const result = await server.mountIframe(iframe, {
+    workspace: 'visualization',
+    client_id: 'data-viewer'
+});
+
+console.log('Iframe mounted:', result.client_id);
+
+// Get the iframe's service and interact with it
+const viewerService = await server.api.getService('data-viewer:default');
+await viewerService.loadData({ dataset: 'my-data.csv' });
+```
+
+### Configuration Options
+
+Both `mountWorker` and `mountIframe` accept these configuration options:
+
+```javascript
+{
+    workspace: 'workspace-name',    // Workspace to connect to (default: 'default')
+    client_id: 'unique-client-id',  // Client identifier (default: auto-generated)
+    user_info: {                    // User information (default: anonymous)
+        id: 'user-123',
+        email: 'user@example.com',
+        roles: ['user'],
+        scopes: []
+    },
+    config: {},                     // Configuration passed to the worker/iframe
+    timeout: 60000                  // Connection timeout in ms (default: 60000)
+}
+```
+
+### Return Value
+
+Both methods return a result object:
+
+```javascript
+{
+    workspace: 'workspace-name',
+    client_id: 'client-id',
+    connection: { /* connection object */ },
+    service: { /* registered service object */ }
+}
+```
+
+### Complete Working Example
+
+See [`examples/pyodide-adhoc-client.html`](./examples/pyodide-adhoc-client.html) for a complete example demonstrating:
+
+- ✅ Mounting a Pyodide worker to run Python code
+- ✅ Registering JavaScript services callable from Python
+- ✅ Bidirectional RPC communication
+- ✅ Real-time output display
+- ✅ Error handling
+
+**Example Output:**
+```
+Python/Pyodide Worker Started
+==================================================
+
+Found 2 services:
+  - default/root:default: Default workspace management service
+  - default/root:demo-service: JavaScript Demo Service
+
+Calling demo.greet('Python')...
+Response: Hello Python from JavaScript!
+
+Calling demo.add(42, 58)...
+Result: 100
+
+All RPC calls successful!
+==================================================
+```
+
+### Key Features
+
+**✅ Simple API**
+- No ImJoy plugin format required
+- Mount any existing worker or iframe
+- Automatic RPC connection setup
+
+**✅ Flexible Integration**
+- Works with Pyodide, custom workers, React apps, etc.
+- Pass configuration during mounting
+- Full access to Hypha services
+
+**✅ Bidirectional Communication**
+- Workers/iframes can call Hypha services
+- Hypha can call worker/iframe services
+- Automatic message forwarding
+
+**✅ Production Ready**
+- Timeout handling
+- Error detection
+- Connection state management
+- Proper cleanup
+
+### Comparison: Mount vs LoadApp
+
+| Feature | `mountWorker/mountIframe` | `loadApp` |
+|---------|---------------------------|-----------|
+| **Input** | Existing Worker/Iframe instance | URL to load |
+| **Format** | Any format | ImJoy plugin format |
+| **Use Case** | Integrate existing code | Load Hypha/ImJoy plugins |
+| **Control** | Full control over creation | Managed by Hypha |
+| **Flexibility** | Maximum flexibility | Plugin ecosystem |
+
+Use `mountWorker`/`mountIframe` when you:
+- Have an existing worker or iframe instance
+- Want full control over initialization
+- Don't want to use the ImJoy plugin format
+- Need to integrate custom environments (Pyodide, etc.)
+
+Use `loadApp` when you:
+- Want to load plugins from URLs
+- Use the ImJoy plugin ecosystem
+- Prefer managed lifecycle and configuration
+
 ## Context Usage and Workspace Isolation
 
 ### Understanding Context
@@ -2395,7 +2643,7 @@ const api = await hyphaCore.start({
 // {
 //   id: "anonymous",
 //   is_anonymous: true,
-//   email: "anonymous@imjoy.io",
+//   email: "anonymous@amun.ai",
 //   roles: []
 // }
 ```

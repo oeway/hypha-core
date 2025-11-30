@@ -30,7 +30,7 @@ const TEST_CONFIG = {
             anonymous: {
                 id: 'anonymous',
                 is_anonymous: true,
-                email: 'anonymous@imjoy.io'
+                email: 'anonymous@amun.ai'
             }
         },
         

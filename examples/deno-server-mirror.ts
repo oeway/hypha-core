@@ -6,7 +6,7 @@
  * It accepts command line arguments for workspace, token, and server URL configuration.
  * 
  * Usage:
- * deno run --allow-net --allow-env examples/deno-server-mirror.ts --workspace my-workspace --token my-token --server-url https://ai.imjoy.io
+ * deno run --allow-net --allow-env examples/deno-server-mirror.ts --workspace my-workspace --token my-token --server-url https://hypha.aicell.io
  * 
  * Required flags:
  * --server-url or -s: URL of the remote Hypha server
@@ -81,15 +81,15 @@ Optional Options:
   -h, --help                      Show this help message
 
 Examples:
-  # Mirror to ai.imjoy.io
+  # Mirror to hypha.aicell.io
   deno run --allow-net --allow-env examples/deno-server-mirror.ts \\
     --workspace my-workspace \\
     --token my-token \\
-    --server-url https://ai.imjoy.io
+    --server-url https://hypha.aicell.io
 
   # Mirror with custom local port
   deno run --allow-net --allow-env examples/deno-server-mirror.ts \\
-    --workspace test-ws --token abc123 --server-url https://ai.imjoy.io --local-port 8080
+    --workspace test-ws --token abc123 --server-url https://hypha.aicell.io --local-port 8080
         `);
         Deno.exit(0);
     }

@@ -246,7 +246,7 @@ class HyphaCore extends MessageEmitter {
                         user: this.connections[cid].user || {
                             id: "anonymous",
                             is_anonymous: true,
-                            email: "anonymous@imjoy.io",
+                            email: "anonymous@amun.ai",
                             roles: [],
                             scopes: []
                         }
@@ -553,7 +553,7 @@ class HyphaCore extends MessageEmitter {
             userInfo = { 
                 id: anonymousUserId, 
                 is_anonymous: true, 
-                email: "anonymous@imjoy.io",
+                email: "anonymous@amun.ai",
                 roles: [],
                 scopes: []
             };
@@ -749,6 +749,284 @@ class HyphaCore extends MessageEmitter {
         }
         
         await this._disconnectWebsocket(websocket, reason, code);
+    }
+
+    async mountWorker(worker, config = {}) {
+        if (!worker || typeof worker.postMessage !== 'function') {
+            throw new Error('Invalid worker: must have postMessage method');
+        }
+
+        // Extract or generate connection details
+        const workspace = config.workspace || "default";
+        const clientId = config.client_id || "client-" + randId();
+        const connectionKey = `${workspace}/${clientId}`;
+
+        // Create user info
+        const userInfo = config.user_info || {
+            id: clientId,
+            is_anonymous: true,
+            email: "anonymous@amun.ai",
+            roles: [],
+            scopes: []
+        };
+
+        // Generate authentication token
+        let authToken;
+        try {
+            const payload = {
+                sub: userInfo.id,
+                workspace: workspace,
+                client_id: clientId,
+                email: userInfo.email,
+                roles: userInfo.roles,
+                scope: Array.isArray(userInfo.scopes) ? userInfo.scopes.join(' ') : "",
+                iat: Math.floor(Date.now() / 1000),
+                exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+                iss: "hypha-core",
+                aud: "hypha-api"
+            };
+            authToken = await generateJWT(payload, this.jwtSecret);
+        } catch (error) {
+            console.warn("Failed to generate auth token for worker:", error);
+        }
+
+        // Create connection object
+        this.connections[connectionKey] = {
+            id: connectionKey,
+            source: worker,
+            workspace: workspace,
+            user: userInfo,
+            websocket: null,
+            _rpcConnection: null,
+            postMessage: (data) => {
+                try {
+                    worker.postMessage(data);
+                } catch (error) {
+                    console.error(`Error posting message to ${connectionKey}:`, error);
+                }
+            }
+        };
+
+        // Set up message handler for the worker
+        const messageHandler = (event) => {
+            // Create a synthetic event with currentTarget set to the worker
+            // This allows _handleClientMessage to identify which worker sent the message
+            const syntheticEvent = {
+                data: event.data,
+                source: null,
+                currentTarget: worker,
+                target: worker
+            };
+            this._handleClientMessage(syntheticEvent);
+        };
+        worker.addEventListener('message', messageHandler);
+
+        // Create RPC connection
+        const conn = new WebsocketRPCConnection(this, workspace, clientId, userInfo, this.workspaceManagerId);
+        this.connections[connectionKey]._rpcConnection = conn;
+
+        // Set up bidirectional message forwarding
+        conn.on_message(data => {
+            this.connections[connectionKey].postMessage({
+                type: "message",
+                data: data,
+                to: clientId,
+                workspace: workspace
+            });
+        });
+
+        console.log(`✅ Registered worker connection: ${connectionKey}`);
+
+        // Wait for worker to signal it's ready to receive messages (via hyphaClientReady)
+        const timeout = config.timeout || 60000;
+        try {
+            await this._waitForConnection(connectionKey, timeout);
+            console.log(`✅ Worker connection ready: ${connectionKey}`);
+        } catch (error) {
+            throw new Error(`Worker did not send hyphaClientReady within ${timeout}ms: ${error.message}`);
+        }
+
+        // Send initialization message to the worker
+        const baseUrl = this.url.endsWith("/") ? this.url.slice(0, -1) : this.url;
+        const initMessage = {
+            type: "initializeHyphaClient",
+            server_url: baseUrl,
+            workspace: workspace,
+            client_id: clientId,
+            token: authToken || null,
+            user_info: userInfo,
+        };
+
+        // If there's a config field, include it (for workers like Pyodide that expect it)
+        if (config.config) {
+            initMessage.config = config.config;
+        }
+
+        worker.postMessage(initMessage);
+
+        // Wait for the worker's RPC client to connect and register a service
+        try {
+            const svc = await this.workspaceManager.waitForClient(connectionKey, timeout);
+            console.log(`✅ Worker RPC client ready: ${connectionKey}`);
+            return {
+                workspace,
+                client_id: clientId,
+                connection: this.connections[connectionKey],
+                service: svc
+            };
+        } catch (error) {
+            throw new Error(`Worker RPC client did not become ready within ${timeout}ms: ${error.message}`);
+        }
+    }
+
+    _waitForConnection(conn_id, timeout) {
+        return new Promise((resolve, reject) => {
+            const handler = (info) => {
+                if (info.id === conn_id) {
+                    this.off("connection_ready", handler);
+                    clearTimeout(timeoutId);
+                    resolve(info);
+                }
+            };
+            const timeoutId = setTimeout(() => {
+                this.off("connection_ready", handler);
+                reject(new Error(`Timeout after ${timeout / 1000} s`));
+            }, timeout);
+            this.on("connection_ready", handler);
+        });
+    }
+
+    async mountIframe(iframe, config = {}) {
+        // Ensure we're in a browser environment
+        Environment.requireBrowser('Iframe mounting');
+
+        // Handle both iframe element and iframe.contentWindow
+        let iframeElement = iframe;
+        let iframeWindow;
+
+        if (iframe && iframe.contentWindow) {
+            // It's an iframe element
+            iframeWindow = iframe.contentWindow;
+        } else if (iframe && iframe.postMessage && iframe.parent) {
+            // It's an iframe window (contentWindow)
+            iframeWindow = iframe;
+            // Try to find the iframe element (not always possible)
+            iframeElement = null;
+        } else {
+            throw new Error('Invalid iframe: must be an iframe element or iframe.contentWindow');
+        }
+
+        // Extract or generate connection details
+        const workspace = config.workspace || "default";
+        const clientId = config.client_id || "client-" + randId();
+        const connectionKey = `${workspace}/${clientId}`;
+
+        // Create user info
+        const userInfo = config.user_info || {
+            id: clientId,
+            is_anonymous: true,
+            email: "anonymous@amun.ai",
+            roles: [],
+            scopes: []
+        };
+
+        // Generate authentication token
+        let authToken;
+        try {
+            const payload = {
+                sub: userInfo.id,
+                workspace: workspace,
+                client_id: clientId,
+                email: userInfo.email,
+                roles: userInfo.roles,
+                scope: Array.isArray(userInfo.scopes) ? userInfo.scopes.join(' ') : "",
+                iat: Math.floor(Date.now() / 1000),
+                exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+                iss: "hypha-core",
+                aud: "hypha-api"
+            };
+            authToken = await generateJWT(payload, this.jwtSecret);
+        } catch (error) {
+            console.warn("Failed to generate auth token for iframe:", error);
+        }
+
+        // Create connection object
+        this.connections[connectionKey] = {
+            id: connectionKey,
+            source: iframeWindow,
+            workspace: workspace,
+            user: userInfo,
+            websocket: null,
+            _rpcConnection: null,
+            postMessage: (data) => {
+                try {
+                    Environment.safePostMessage(iframeWindow, data, "*");
+                } catch (error) {
+                    console.error(`Error posting message to ${connectionKey}:`, error);
+                }
+            }
+        };
+
+        // Set up message handler for the iframe
+        // Note: iframe messages come through window message events, not directly from iframe
+        // The existing window message handler in start() will handle these
+        // We just need to make sure the connection is registered
+
+        // Create RPC connection
+        const conn = new WebsocketRPCConnection(this, workspace, clientId, userInfo, this.workspaceManagerId);
+        this.connections[connectionKey]._rpcConnection = conn;
+
+        // Set up bidirectional message forwarding
+        conn.on_message(data => {
+            this.connections[connectionKey].postMessage({
+                type: "message",
+                data: data,
+                to: clientId,
+                workspace: workspace
+            });
+        });
+
+        console.log(`✅ Mounted iframe: ${connectionKey}`);
+
+        // Send initialization message to the iframe
+        const baseUrl = this.url.endsWith("/") ? this.url.slice(0, -1) : this.url;
+        const initMessage = {
+            type: "initializeHyphaClient",
+            server_url: baseUrl,
+            workspace: workspace,
+            client_id: clientId,
+            token: authToken || null,
+            user_info: userInfo,
+        };
+
+        // Wait a bit for iframe to load if element is provided
+        if (iframeElement && iframeElement.tagName === 'IFRAME') {
+            await new Promise((resolve, reject) => {
+                if (iframeElement.contentDocument && iframeElement.contentDocument.readyState === 'complete') {
+                    resolve();
+                } else {
+                    iframeElement.onload = resolve;
+                    iframeElement.onerror = reject;
+                }
+            });
+        }
+
+        this.connections[connectionKey].postMessage(initMessage);
+
+        // Wait for the iframe to be ready (optional timeout)
+        const timeout = config.timeout || 60000;
+        try {
+            await this.workspaceManager.waitForClient(connectionKey, timeout);
+            console.log(`✅ Iframe ready: ${connectionKey}`);
+        } catch (error) {
+            console.warn(`Iframe did not become ready within ${timeout}ms:`, error);
+        }
+
+        return {
+            workspace,
+            client_id: clientId,
+            connection: this.connections[connectionKey]
+        };
     }
 
     async connect(config){

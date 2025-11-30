@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pyodide Ad-Hoc Client Example</title>
+</head>
+<body>
+    <h1>Pyodide Ad-Hoc Client Example</h1>
+    <div id="status">Loading...</div>
+    <div id="output"></div>
+
+    <script type="module">
+        import { HyphaCore } from '../dist/hypha-core.mjs';
+
+        // Initialize Hypha Core
+        const server = new HyphaCore({
+            port: 9527
+        });
+
+        const api = await server.start();
+        console.log('Hypha Core started:', api.config);
+        document.getElementById('status').textContent = 'Hypha Core started. Registering services...';
+
+        // Register a demo service that Python can call
+        await api.registerService({
+            id: 'demo-service',
+            name: 'JavaScript Demo Service',
+            description: 'A demo service callable from Python',
+            config: {
+                visibility: 'public'
+            },
+            // These functions can be called from Python
+            greet: async (name) => {
+                const message = `Hello ${name} from JavaScript!`;
+                console.log('JS: greet() called with:', name);
+                document.getElementById('output').innerHTML += `<p style="color: blue;">JS: ${message}</p>`;
+                return message;
+            },
+            add: async (a, b) => {
+                const result = a + b;
+                console.log(`JS: add(${a}, ${b}) = ${result}`);
+                document.getElementById('output').innerHTML += `<p style="color: blue;">JS: add(${a}, ${b}) = ${result}</p>`;
+                return result;
+            },
+            get_data: async () => {
+                const data = {
+                    timestamp: new Date().toISOString(),
+                    random: Math.random(),
+                    message: 'Data from JavaScript'
+                };
+                console.log('JS: get_data() returning:', data);
+                return data;
+            }
+        });
+
+        console.log('Demo service registered!');
+        document.getElementById('status').textContent = 'Services registered. Loading Pyodide...';
+
+        // Create the Pyodide web worker
+        const worker = new Worker('pyodide-worker.js');
+
+        // Listen for stdout/stderr from the worker
+        worker.onmessage = (event) => {
+            if (event.data.type === 'stdout') {
+                const output = document.getElementById('output');
+                output.innerHTML += `<p style="color: green; margin: 2px 0; font-family: monospace;">${event.data.message}</p>`;
+            } else if (event.data.type === 'stderr') {
+                const output = document.getElementById('output');
+                output.innerHTML += `<p style="color: red; margin: 2px 0; font-family: monospace;">${event.data.message}</p>`;
+            }
+        };
+
+        // Mount the worker to Hypha Core - this handles all the connection setup!
+        const result = await server.mountWorker(worker, {
+            workspace: 'default',
+            client_id: 'pyodide-notebook',
+            config: {
+                name: 'test-notebook',
+                scripts: [{
+                    lang: 'python',
+                    content: `
+print("=" * 50)
+print("Python/Pyodide Worker Started")
+print("=" * 50)
+
+# List available services
+services = await api.list_services({})
+print(f"\\nFound {len(services)} services:")
+for svc in services:
+    print(f"  - {svc['id']}: {svc['name']}")
+
+# Get the demo service
+print("\\nGetting demo-service...")
+demo = await api.get_service("demo-service")
+print(f"Got service: {demo}")
+
+# Call the greet function
+print("\\nCalling demo.greet('Python')...")
+greeting = await demo.greet("Python")
+print(f"Response: {greeting}")
+
+# Call the add function
+print("\\nCalling demo.add(42, 58)...")
+result = await demo.add(42, 58)
+print(f"Result: {result}")
+
+# Call getData (camelCase is converted from JavaScript)
+print("\\nCalling demo.getData()...")
+data = await demo.getData()
+print(f"Data received: {data}")
+
+print("\\n" + "=" * 50)
+print("All RPC calls successful!")
+print("=" * 50)
+`
+                }]
+            }
+        });
+
+        console.log('Worker mounted and ready!', result);
+        document.getElementById('status').textContent = 'Worker connected! Check output below and console.';
+    </script>
+</body>
+</html>

@@ -38,7 +38,7 @@ deno add jsr:@std/cli
 deno run --allow-net --allow-env examples/deno-server-mirror.ts \
   --workspace my-workspace \
   --token my-auth-token \
-  --server-url https://ai.imjoy.io
+  --server-url https://hypha.aicell.io
 ```
 
 ### 3. With Custom Local Port
@@ -47,7 +47,7 @@ deno run --allow-net --allow-env examples/deno-server-mirror.ts \
 deno run --allow-net --allow-env examples/deno-server-mirror.ts \
   --workspace test-workspace \
   --token abc123 \
-  --server-url https://ai.imjoy.io \
+  --server-url https://hypha.aicell.io \
   --local-port 8080
 ```
 
@@ -59,7 +59,7 @@ deno run --allow-net --allow-env examples/deno-server-mirror.ts \
 |----------|--------|-------------|---------|
 | `--workspace` | `-w` | Workspace to connect to on remote server | `my-workspace` |
 | `--token` | `-t` | Authentication token for remote server | `your-auth-token` |
-| `--server-url` | `-s` | URL of remote Hypha server | `https://ai.imjoy.io` |
+| `--server-url` | `-s` | URL of remote Hypha server | `https://hypha.aicell.io` |
 
 ### Optional Arguments
 
@@ -117,7 +117,7 @@ This makes it easy to identify which services are mirrored from local servers.
 deno run --allow-net --allow-env examples/deno-server-mirror.ts \
   --workspace test-ws \
   --token your-token \
-  --server-url https://ai.imjoy.io
+  --server-url https://hypha.aicell.io
 ```
 
 ### 2. Test Local Services
@@ -146,9 +146,9 @@ When running successfully, you'll see output like:
 📍 Local server URL: http://localhost:9528
 🔌 Local WebSocket URL: ws://localhost:9528/ws
 
-🔗 Connecting to remote Hypha server at https://ai.imjoy.io...
+🔗 Connecting to remote Hypha server at https://hypha.aicell.io...
 ✅ Connected to remote Hypha server successfully!
-📍 Remote server: https://ai.imjoy.io
+📍 Remote server: https://hypha.aicell.io
 📁 Workspace: my-workspace
 🆔 Client ID: mirror-client-abc123
 
@@ -165,7 +165,7 @@ When running successfully, you'll see output like:
 
 📊 Status:
   🏠 Local server: http://localhost:9528
-  🌐 Remote server: https://ai.imjoy.io
+  🌐 Remote server: https://hypha.aicell.io
   📁 Remote workspace: my-workspace
   🔄 Mirrored services: 1
 
