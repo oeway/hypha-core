@@ -864,6 +864,17 @@ class HyphaCore extends MessageEmitter {
 
         worker.postMessage(initMessage);
 
+        // If passive mode, skip waiting for service registration
+        if (config.passive) {
+            console.log(`✅ Worker mounted in passive mode: ${connectionKey}`);
+            return {
+                workspace,
+                client_id: clientId,
+                connection: this.connections[connectionKey],
+                service: null
+            };
+        }
+
         // Wait for the worker's RPC client to connect and register a service
         try {
             const svc = await this.workspaceManager.waitForClient(connectionKey, timeout);
@@ -1013,20 +1024,37 @@ class HyphaCore extends MessageEmitter {
 
         this.connections[connectionKey].postMessage(initMessage);
 
+        // If passive mode, skip waiting for service registration
+        if (config.passive) {
+            console.log(`✅ Iframe mounted in passive mode: ${connectionKey}`);
+            return {
+                workspace,
+                client_id: clientId,
+                connection: this.connections[connectionKey],
+                service: null
+            };
+        }
+
         // Wait for the iframe to be ready (optional timeout)
         const timeout = config.timeout || 60000;
         try {
-            await this.workspaceManager.waitForClient(connectionKey, timeout);
+            const svc = await this.workspaceManager.waitForClient(connectionKey, timeout);
             console.log(`✅ Iframe ready: ${connectionKey}`);
+            return {
+                workspace,
+                client_id: clientId,
+                connection: this.connections[connectionKey],
+                service: svc
+            };
         } catch (error) {
             console.warn(`Iframe did not become ready within ${timeout}ms:`, error);
+            return {
+                workspace,
+                client_id: clientId,
+                connection: this.connections[connectionKey],
+                service: null
+            };
         }
-
-        return {
-            workspace,
-            client_id: clientId,
-            connection: this.connections[connectionKey]
-        };
     }
 
     async connect(config){

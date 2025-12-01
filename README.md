@@ -1836,8 +1836,30 @@ Both `mountWorker` and `mountIframe` accept these configuration options:
         scopes: []
     },
     config: {},                     // Configuration passed to the worker/iframe
-    timeout: 60000                  // Connection timeout in ms (default: 60000)
+    timeout: 60000,                 // Connection timeout in ms (default: 60000)
+    passive: false                  // Skip waiting for service registration (default: false)
 }
+```
+
+#### Passive Mode
+
+When `passive: true`, the mount methods return immediately after sending the initialization message without waiting for the worker/iframe to register a service. This is useful when:
+
+- You don't need to interact with the worker/iframe immediately
+- The worker/iframe may take a long time to initialize
+- You want to mount multiple workers/iframes in parallel without blocking
+
+```javascript
+// Mount worker in passive mode
+const result = await server.mountWorker(worker, {
+    workspace: 'default',
+    passive: true  // Returns immediately, service will be null
+});
+
+console.log(result.service);  // null - no service yet
+
+// Later, get the service when needed
+const service = await server.api.getService(`${result.client_id}:default`);
 ```
 
 ### Return Value
@@ -1849,9 +1871,11 @@ Both methods return a result object:
     workspace: 'workspace-name',
     client_id: 'client-id',
     connection: { /* connection object */ },
-    service: { /* registered service object */ }
+    service: { /* registered service object */ }  // null if passive: true
 }
 ```
+
+**Note:** When `passive: true`, the `service` field will be `null` since the method returns without waiting for service registration.
 
 ### Complete Working Example
 
