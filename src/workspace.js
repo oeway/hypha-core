@@ -961,7 +961,15 @@ export class Workspace {
                 throw new Error('iframe creation requires browser environment with document API');
             }
             elem = document.createElement("iframe");
-            elem.src = config.src + authHash;
+
+            // Use srcDoc for HTML content, src for URLs
+            if (config._isHtmlContent) {
+                elem.srcdoc = this._injectAuthIntoHtml(config.src, authParams);
+                elem.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-modals');
+            } else {
+                elem.src = config.src + authHash;
+            }
+
             elem.id = config.window_id || "window-" + Date.now();
             elem.style.width = config.width || "100%";
             elem.style.height = config.height || "100%";
@@ -1005,7 +1013,15 @@ export class Workspace {
             const iframe = document.createElement("iframe");
             iframe.style.width = config.width || "100%";
             iframe.style.height = config.height || "100%";
-            iframe.src = config.src + authHash;
+
+            // Use srcDoc for HTML content, src for URLs
+            if (config._isHtmlContent) {
+                iframe.srcdoc = this._injectAuthIntoHtml(config.src, authParams);
+                iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-modals');
+            } else {
+                iframe.src = config.src + authHash;
+            }
+
             elem.appendChild(iframe);
             elem = iframe;
         }
@@ -1085,16 +1101,81 @@ export class Workspace {
         return undefined;
     }
 
+    _isHtmlContent(src) {
+        if (!src || typeof src !== 'string') return false;
+
+        const trimmed = src.trim();
+        if (!trimmed) return false;
+
+        const lower = trimmed.toLowerCase();
+
+        // Check for common HTML document patterns
+        if (lower.startsWith('<!doctype html')) return true;
+        if (lower.startsWith('<html')) return true;
+
+        // Check for other common HTML root elements
+        const htmlStartPatterns = [
+            '<head', '<body', '<div', '<span', '<p>',
+            '<h1', '<h2', '<h3', '<h4', '<h5', '<h6',
+            '<table', '<form', '<section', '<article',
+            '<header', '<footer', '<nav', '<main',
+            '<svg', '<canvas'
+        ];
+
+        if (htmlStartPatterns.some(pattern => lower.startsWith(pattern))) {
+            return true;
+        }
+
+        // Check if it contains HTML tags using regex
+        const htmlTagPattern = /<\/?[a-z][\s\S]*>/i;
+        if (htmlTagPattern.test(trimmed)) {
+            // Additionally verify it's not a URL by checking for common protocols
+            const urlPattern = /^(https?|ftp|file):\/\//i;
+            return !urlPattern.test(trimmed);
+        }
+
+        return false;
+    }
+
+    _injectAuthIntoHtml(htmlContent, authParams) {
+        // Create a script that sets the location hash with auth params
+        // Use JSON stringification to safely escape the auth params string
+        const authParamsStr = authParams.toString();
+        const authScript = `
+            <script>
+                // Set authentication parameters in the location hash
+                if (!window.location.hash) {
+                    window.location.hash = ${JSON.stringify(authParamsStr)};
+                }
+            </script>
+        `;
+
+        // Try to inject before </head> if it exists, otherwise before </body>, otherwise at the end
+        if (htmlContent.includes('</head>')) {
+            return htmlContent.replace('</head>', authScript + '</head>');
+        } else if (htmlContent.includes('</body>')) {
+            return htmlContent.replace('</body>', authScript + '</body>');
+        } else {
+            return htmlContent + authScript;
+        }
+    }
+
     async loadApp(config, extra_config, context) {
         let code;
         const ws = context.ws;
         const src = config.src;
-        
+
         // If type is already specified as web-worker and src is a URL, use it directly as the worker script
         if (config.type === "web-worker" && src && (src.startsWith("http") || src.startsWith("blob:"))) {
             return await this.createWorker(config, ws, src, context);
         }
-        
+
+        // Check if src is HTML content
+        if (this._isHtmlContent(src)) {
+            config._isHtmlContent = true;
+            return await this.createWindow(config, extra_config, context);
+        }
+
         if (src.startsWith("http") && !src.split("?")[0].endsWith(".imjoy.html")) {
             return await this.createWindow(config, extra_config, context);
         }

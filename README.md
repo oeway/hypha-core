@@ -1087,6 +1087,157 @@ await workspace2.registerService({
 });
 ```
 
+### 3. Python Integration - Creating Interactive Windows
+
+Hypha Core enables seamless integration between Python (via Pyodide or server-side Python with hypha-rpc) and browser-based JavaScript applications. This example shows how to create an interactive todo list application where Python code controls a JavaScript UI running in a browser window.
+
+```python
+# Python code (can run in Pyodide or server-side with hypha-rpc)
+import asyncio
+from hypha_rpc import connect_to_server
+
+# Connect to Hypha Core server
+server = await connect_to_server({
+    "server_url": "http://localhost:9527",
+    "workspace": "default",
+    "client_id": "python-controller"
+})
+
+# Define the HTML/JavaScript application as a string
+src = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Todo List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        #todo-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        #todo-list li {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f4f4f4;
+            border-radius: 4px;
+        }
+    </style>
+    <script type="module">
+        import * as hyphaWebsocketClient from 'https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.84/dist/hypha-rpc-websocket.mjs';
+
+        // Setup local client to communicate with Hypha Core
+        const server = await hyphaWebsocketClient.setupLocalClient();
+
+        // Export functions that Python can call
+        await server.export({
+            // Get all todos from the list
+            getTodos: () => {
+                const listItems = document.querySelectorAll('#todo-list li');
+                return Array.from(listItems).map(li => li.textContent);
+            },
+
+            // Add a new todo to the list
+            addTodo: (todoText) => {
+                const list = document.getElementById('todo-list');
+                const li = document.createElement('li');
+                li.textContent = todoText;
+                list.appendChild(li);
+                return `Added: ${todoText}`;
+            },
+
+            // Clear all todos
+            clearTodos: () => {
+                const list = document.getElementById('todo-list');
+                list.innerHTML = '';
+                return 'Cleared all todos';
+            }
+        });
+
+        console.log('Todo app ready - services exported');
+    </script>
+</head>
+<body>
+    <h1>📝 My Todo List</h1>
+    <ul id="todo-list">
+        <li>Learn Hypha RPC</li>
+        <li>Build awesome apps</li>
+    </ul>
+</body>
+</html>
+'''
+
+# Create a window with the HTML content
+# This returns a service proxy that can call the exported JavaScript functions
+todo_app = await server.create_window(src=src, name='My Todo List')
+
+# Now we can control the JavaScript application from Python!
+# Add new todos
+result = await todo_app.addTodo('Buy groceries')
+print(result)  # Output: Added: Buy groceries
+
+result = await todo_app.addTodo('Call dentist')
+print(result)  # Output: Added: Call dentist
+
+# Get all todos
+todos = await todo_app.getTodos()
+print('Current todos:', todos)
+# Output: Current todos: ['Learn Hypha RPC', 'Build awesome apps', 'Buy groceries', 'Call dentist']
+
+# Clear the list
+result = await todo_app.clearTodos()
+print(result)  # Output: Cleared all todos
+```
+
+**Key Features Demonstrated:**
+
+1. **Bidirectional RPC**: Python can call JavaScript functions, and JavaScript can call Python functions
+2. **HTML String Loading**: The entire application is defined as a string and loaded directly
+3. **Service Export**: JavaScript exports an API that Python can invoke
+4. **Type Safety**: Return values are automatically serialized/deserialized
+5. **Async/Await**: Seamless async communication between Python and JavaScript
+
+**Use Cases:**
+- Building data visualization dashboards controlled from Python
+- Creating interactive UI for Python data science workflows
+- Automating browser-based applications from Python scripts
+- Building Jupyter notebook-like experiences with custom UIs
+
+**Server-Side Python Example:**
+
+```python
+# Run this on a Python server that can reach your Hypha Core instance
+from hypha_rpc import connect_to_server
+import asyncio
+
+async def main():
+    # Connect to remote Hypha Core server
+    server = await connect_to_server({
+        "server_url": "https://your-hypha-server.com",
+        "workspace": "my-workspace",
+        "client_id": "python-backend",
+        "token": "your-auth-token"  # If authentication is enabled
+    })
+
+    # Create window and interact with it
+    app = await server.create_window(src=html_content, name='Data Dashboard')
+
+    # Update dashboard with computed data
+    data = compute_heavy_analysis()
+    await app.updateChart(data)
+
+    print("Dashboard updated successfully!")
+
+asyncio.run(main())
+```
+
 ## Iframe and WebWorker Integration
 
 Hypha Core supports loading and communicating with applications in iframes and web workers. This enables you to create distributed applications where different components run in isolated environments while still communicating through the Hypha RPC system.
@@ -2454,14 +2605,55 @@ const customWorker = await api.loadApp({
 // - HTTP/HTTPS: 'https://cdn.example.com/worker.js'
 // - Blob URLs: URL.createObjectURL(blob)
 // - File URLs: '/static/workers/my-worker.js'
+
+// Loading HTML content directly (NEW!)
+const htmlApp = await api.loadApp({
+    src: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>My App</title>
+            <script src="https://cdn.jsdelivr.net/npm/hypha-rpc@0.20.60/dist/hypha-rpc-websocket.min.js"></script>
+        </head>
+        <body>
+            <h1>Hello from HTML Content!</h1>
+            <script>
+                async function init() {
+                    const server = await hyphaWebsocketClient.setupLocalClient();
+                    server.export({
+                        greet: (name) => \`Hello \${name}!\`
+                    });
+                }
+                init();
+            </script>
+        </body>
+        </html>
+    `,
+    name: 'HTML Content App',
+    description: 'App loaded from HTML string'
+});
+
+// Also works with createWindow
+const htmlWindow = await api.createWindow({
+    src: '<div><h1>Simple HTML</h1><p>Loaded from string</p></div>',
+    type: 'iframe',
+    width: '800px',
+    height: '600px'
+});
 ```
 
 **loadApp Parameters:**
-- `src` - Plugin URL or custom script URL (required)
-- `type` - For custom workers, must be `'web-worker'` (optional for ImJoy plugins)
+- `src` - Plugin URL, custom script URL, or HTML content string (required)
+- `type` - For custom workers, must be `'web-worker'` (optional for ImJoy plugins and HTML content)
 - `name` - Display name for the loaded app (optional)
 - `description` - App description (optional)
 - `config` - Additional configuration passed to the app (optional)
+
+**HTML Content Loading:**
+- If `src` is detected as HTML content (starts with `<!DOCTYPE`, `<html>`, or other HTML tags), it will be automatically loaded as an iframe using `srcDoc`
+- HTML content is sandboxed with `allow-scripts allow-same-origin allow-forms allow-modals` for security
+- Authentication parameters are automatically injected into the HTML content
+- Works with both `loadApp` and `createWindow` methods
 
 **Returns:** Promise<ServiceAPI> - Service API object with exported methods
 
